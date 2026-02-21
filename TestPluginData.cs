@@ -14,6 +14,9 @@ public static class TestPluginData
     private const string DefaultDemoChapterId = "ch-1";
     private const string DefaultDemoVideoId = "demo-video-1";
     private const string DefaultDemoStreamId = "stream-1";
+    private const string DefaultSource = "test";
+    private const string DefaultPagedMediaType = "paged";
+    private const string DefaultPlaylistUri = "https://example.invalid/demo/playlist.m3u8";
 
     public static string DemoMediaId { get; private set; } = DefaultDemoMediaId;
     public static string DemoMediaIdAlt { get; private set; } = DefaultDemoMediaIdAlt;
@@ -61,10 +64,10 @@ public static class TestPluginData
             DemoVideoId = string.IsNullOrWhiteSpace(fixture.DemoVideoId) ? DemoVideoId : fixture.DemoVideoId;
             DemoStreamId = string.IsNullOrWhiteSpace(fixture.DemoStreamId) ? DemoStreamId : fixture.DemoStreamId;
 
-            _searchResults = FilterSearchResults(fixture.SearchResults) ?? DefaultSearchResults();
-            _chapters = FilterChapters(fixture.Chapters) ?? DefaultChapters();
-            _page = fixture.Page ?? DefaultPage();
-            _streams = FilterStreams(fixture.Streams) ?? DefaultStreams();
+            _searchResults = NormalizeSearchResults(fixture.SearchResults) ?? DefaultSearchResults();
+            _chapters = NormalizeChapters(fixture.Chapters) ?? DefaultChapters();
+            _page = NormalizePage(fixture.Page) ?? DefaultPage();
+            _streams = NormalizeStreams(fixture.Streams) ?? DefaultStreams();
             _segment = fixture.Segment?.ToSegmentResponse() ?? DefaultSegment();
         }
         catch
@@ -129,46 +132,108 @@ public static class TestPluginData
         ];
     }
 
-    private static List<MediaSummary>? FilterSearchResults(List<MediaSummary>? results)
+    private static List<MediaSummary>? NormalizeSearchResults(List<MediaSummary>? results)
     {
-        if (results is null)
+        if (results is null || results.Count == 0)
         {
             return null;
         }
 
-        var filtered = results
-            .Where(result => !string.IsNullOrWhiteSpace(result.Id))
-            .ToList();
+        var normalized = new List<MediaSummary>(results.Count);
 
-        return filtered.Count == 0 ? null : filtered;
+        for (var i = 0; i < results.Count; i++)
+        {
+            var result = results[i] ?? new MediaSummary();
+            var id = string.IsNullOrWhiteSpace(result.Id) ? $"demo-{i + 1}" : result.Id;
+            var title = string.IsNullOrWhiteSpace(result.Title) ? $"Demo Paged Media {i + 1}" : result.Title;
+            var source = string.IsNullOrWhiteSpace(result.Source) ? DefaultSource : result.Source;
+            var mediaType = string.IsNullOrWhiteSpace(result.MediaType) ? DefaultPagedMediaType : result.MediaType;
+
+            normalized.Add(new MediaSummary
+            {
+                Id = id,
+                Title = title,
+                Source = source,
+                MediaType = mediaType
+            });
+        }
+
+        return normalized;
     }
 
-    private static List<MediaChapter>? FilterChapters(List<MediaChapter>? chapters)
+    private static List<MediaChapter>? NormalizeChapters(List<MediaChapter>? chapters)
     {
-        if (chapters is null)
+        if (chapters is null || chapters.Count == 0)
         {
             return null;
         }
 
-        var filtered = chapters
-            .Where(chapter => !string.IsNullOrWhiteSpace(chapter.Id))
-            .ToList();
+        var normalized = new List<MediaChapter>(chapters.Count);
 
-        return filtered.Count == 0 ? null : filtered;
+        for (var i = 0; i < chapters.Count; i++)
+        {
+            var chapter = chapters[i] ?? new MediaChapter();
+            var number = chapter.Number == 0 ? i + 1 : chapter.Number;
+            var id = string.IsNullOrWhiteSpace(chapter.Id) ? $"ch-{number}" : chapter.Id;
+            var title = string.IsNullOrWhiteSpace(chapter.Title) ? $"Chapter {number}" : chapter.Title;
+
+            normalized.Add(new MediaChapter
+            {
+                Id = id,
+                Number = number,
+                Title = title
+            });
+        }
+
+        return normalized;
     }
 
-    private static List<StreamInfo>? FilterStreams(List<StreamInfo>? streams)
+    private static MediaPage? NormalizePage(MediaPage? page)
     {
-        if (streams is null)
+        if (page is null)
         {
             return null;
         }
 
-        var filtered = streams
-            .Where(stream => !string.IsNullOrWhiteSpace(stream.Id))
-            .ToList();
+        var index = page.Index < 0 ? 0 : page.Index;
+        var id = string.IsNullOrWhiteSpace(page.Id) ? $"page-{index + 1}" : page.Id;
+        var contentUri = string.IsNullOrWhiteSpace(page.ContentUri)
+            ? $"https://example.invalid/{DemoMediaId}/page-{index + 1}.jpg"
+            : page.ContentUri;
 
-        return filtered.Count == 0 ? null : filtered;
+        return new MediaPage
+        {
+            Id = id,
+            Index = index,
+            ContentUri = contentUri
+        };
+    }
+
+    private static List<StreamInfo>? NormalizeStreams(List<StreamInfo>? streams)
+    {
+        if (streams is null || streams.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = new List<StreamInfo>(streams.Count);
+
+        for (var i = 0; i < streams.Count; i++)
+        {
+            var stream = streams[i] ?? new StreamInfo();
+            var id = string.IsNullOrWhiteSpace(stream.Id) ? $"stream-{i + 1}" : stream.Id;
+            var label = string.IsNullOrWhiteSpace(stream.Label) ? $"Stream {i + 1}" : stream.Label;
+            var playlistUri = string.IsNullOrWhiteSpace(stream.PlaylistUri) ? DefaultPlaylistUri : stream.PlaylistUri;
+
+            normalized.Add(new StreamInfo
+            {
+                Id = id,
+                Label = label,
+                PlaylistUri = playlistUri
+            });
+        }
+
+        return normalized;
     }
 
     private static SegmentResponse DefaultSegment()

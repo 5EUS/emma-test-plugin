@@ -1,15 +1,26 @@
 using EMMA.Contracts.Plugins;
 using Grpc.Core;
+using Microsoft.Extensions.Logging;
 
 namespace EMMA.TestPlugin.Services;
 
 /// <summary>
 /// Minimal page provider stub for testing.
 /// </summary>
-public sealed class TestPageProviderService : PageProvider.PageProviderBase
+public sealed class TestPageProviderService(ILogger<TestPageProviderService> logger) : PageProvider.PageProviderBase
 {
+    private readonly ILogger<TestPageProviderService> _logger = logger;
+
     public override Task<ChaptersResponse> GetChapters(ChaptersRequest request, ServerCallContext context)
     {
+        TestPluginRpcGuard.EnsureActive(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+
+        _logger.LogInformation(
+            "Chapters request {CorrelationId} mediaId={MediaId}",
+            correlationId,
+            request.MediaId);
+
         var response = new ChaptersResponse();
 
         if (string.Equals(request.MediaId, TestPluginData.DemoMediaId, StringComparison.OrdinalIgnoreCase))
@@ -22,6 +33,16 @@ public sealed class TestPageProviderService : PageProvider.PageProviderBase
 
     public override Task<PageResponse> GetPage(PageRequest request, ServerCallContext context)
     {
+        TestPluginRpcGuard.EnsureActive(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+
+        _logger.LogInformation(
+            "Page request {CorrelationId} mediaId={MediaId} chapterId={ChapterId} index={Index}",
+            correlationId,
+            request.MediaId,
+            request.ChapterId,
+            request.Index);
+
         var response = new PageResponse();
 
         if (string.Equals(request.MediaId, TestPluginData.DemoMediaId, StringComparison.OrdinalIgnoreCase)
