@@ -27,3 +27,10 @@ Use the helper script from repo root:
 ```bash
 ./scripts/run-plugin-host-with-test-plugin.sh
 ```
+
+## Demo data
+
+- Search query: `demo` returns media ids `demo-1` and `demo-2`.
+- Chapters: `demo-1` returns chapter `ch-1`.
+- Page: `demo-1` + `ch-1` + index `0` returns a demo page URI.
+- Video: `demo-video-1` returns stream `stream-1` and a sample segment payload.

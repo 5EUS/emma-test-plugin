@@ -10,6 +10,14 @@ public sealed class TestSearchProviderService : SearchProvider.SearchProviderBas
 {
     public override Task<SearchResponse> Search(SearchRequest request, ServerCallContext context)
     {
-        return Task.FromResult(new SearchResponse());
+        var response = new SearchResponse();
+
+        if (!string.IsNullOrWhiteSpace(request.Query)
+            && request.Query.Contains("demo", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Results.AddRange(TestPluginData.SearchResults);
+        }
+
+        return Task.FromResult(response);
     }
 }
