@@ -28,7 +28,7 @@
   "page": {
     "id": "page-1",
     "index": 0,
-    "contentUri": "TEST"
+    "contentUri": "https://example.invalid/demo-1/page-1.jpg"
   },
   "streams": [
     {
