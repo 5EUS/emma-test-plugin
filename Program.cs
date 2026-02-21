@@ -23,6 +23,10 @@ public static class Program
 
         builder.Services.AddGrpc();
 
+        var fixturePath = Environment.GetEnvironmentVariable("EMMA_TEST_PLUGIN_FIXTURE")
+            ?? Path.Combine(builder.Environment.ContentRootPath, "fixture.json");
+        TestPluginData.LoadFromFile(fixturePath);
+
         var app = builder.Build();
 
         app.MapGrpcService<TestPluginControlService>();
