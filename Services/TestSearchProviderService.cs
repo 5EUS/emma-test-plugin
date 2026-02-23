@@ -14,7 +14,7 @@ public sealed class TestSearchProviderService(ILogger<TestSearchProviderService>
     public override Task<SearchResponse> Search(SearchRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Search request {CorrelationId} query={Query}",

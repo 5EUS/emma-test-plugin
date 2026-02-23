@@ -6,8 +6,13 @@ internal static class TestPluginRpcGuard
 {
     private const string CorrelationIdHeader = "x-correlation-id";
 
-    public static string GetCorrelationId(ServerCallContext context)
+    public static string GetCorrelationId(ServerCallContext context, string? requestCorrelationId = null)
     {
+        if (!string.IsNullOrWhiteSpace(requestCorrelationId))
+        {
+            return requestCorrelationId;
+        }
+
         var header = context.RequestHeaders?.Get(CorrelationIdHeader);
         return string.IsNullOrWhiteSpace(header?.Value) ? "unknown" : header.Value;
     }

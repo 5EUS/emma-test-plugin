@@ -14,7 +14,7 @@ public sealed class TestPageProviderService(ILogger<TestPageProviderService> log
     public override Task<ChaptersResponse> GetChapters(ChaptersRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Chapters request {CorrelationId} mediaId={MediaId}",
@@ -34,7 +34,7 @@ public sealed class TestPageProviderService(ILogger<TestPageProviderService> log
     public override Task<PageResponse> GetPage(PageRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Page request {CorrelationId} mediaId={MediaId} chapterId={ChapterId} index={Index}",

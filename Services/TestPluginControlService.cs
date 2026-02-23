@@ -14,7 +14,7 @@ public sealed class TestPluginControlService(ILogger<TestPluginControlService> l
     public override Task<HealthResponse> GetHealth(HealthRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation("Health request {CorrelationId}", correlationId);
 
@@ -31,7 +31,7 @@ public sealed class TestPluginControlService(ILogger<TestPluginControlService> l
     public override Task<CapabilitiesResponse> GetCapabilities(CapabilitiesRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation("Capabilities request {CorrelationId}", correlationId);
 

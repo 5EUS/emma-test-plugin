@@ -14,7 +14,7 @@ public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> l
     public override Task<StreamResponse> GetStreams(StreamRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Streams request {CorrelationId} mediaId={MediaId}",
@@ -34,7 +34,7 @@ public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> l
     public override Task<SegmentResponse> GetSegment(SegmentRequest request, ServerCallContext context)
     {
         TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Segment request {CorrelationId} mediaId={MediaId} streamId={StreamId} sequence={Sequence}",
