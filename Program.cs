@@ -32,10 +32,12 @@ public static class Program
         });
 
         builder.Services.AddGrpc();
-
-        var fixturePath = Environment.GetEnvironmentVariable("EMMA_TEST_PLUGIN_FIXTURE")
-            ?? Path.Combine(builder.Environment.ContentRootPath, "fixture.json");
-        TestPluginData.LoadFromFile(fixturePath);
+        builder.Services.AddHttpClient<MangadexClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.mangadex.org");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("EMMA-TestPlugin/1.0");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        });
 
         var app = builder.Build();
 

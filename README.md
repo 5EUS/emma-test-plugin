@@ -28,15 +28,19 @@ Use the helper script from repo root:
 ./scripts/run-plugin-host-with-test-plugin.sh
 ```
 
-## Demo data
+## Mangadex data
 
-- Search query: `demo` returns media ids `demo-1` and `demo-2`.
-- Chapters: `demo-1` returns chapter `ch-1`.
-- Page: `demo-1` + `ch-1` + index `0` returns a demo page URI.
-- Video: `demo-video-1` returns stream `stream-1` and a sample segment payload.
+The test plugin queries live data from the Mangadex API by default.
 
-## Fixture
+Example:
 
-Edit [src/EMMA.TestPlugin/fixture.json](src/EMMA.TestPlugin/fixture.json) to tweak demo data.
+```bash
+dotnet run --project src/EMMA.TestPlugin/EMMA.TestPlugin.csproj
+```
 
-To point at a custom file, set `EMMA_TEST_PLUGIN_FIXTURE` to an absolute path.
+Notes:
+- `Search` uses `/manga` with safe + suggestive ratings.
+- `GetChapters` uses `/manga/{id}/feed`.
+- `GetPage` uses `/at-home/server/{chapterId}` and maps the `index` to page files.
+TODO no retry/backoff policy
+TODO no caching
