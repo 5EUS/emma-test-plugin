@@ -1,4 +1,5 @@
 using EMMA.Contracts.Plugins;
+using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 
@@ -58,7 +59,7 @@ public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> l
             return Task.FromResult(new SegmentResponse
             {
                 ContentType = "video/mp2t",
-                PayloadText = "segment-0"
+                Payload = ByteString.CopyFromUtf8("segment-0")
             });
         }
 
