@@ -1,0 +1,26 @@
+{
+  "id": "emma.plugin.test",
+  "name": "EMMA Test Plugin",
+  "version": "0.1.0",
+  "description": "Local test plugin that provides paged and video content via gRPC.",
+  "author": "EMMA",
+  "protocol": "grpc",
+  "mediaTypes": [
+    "paged"
+  ],
+  "capabilities": {
+    "network": [
+      "https"
+    ],
+    "fileSystem": [],
+    "cache": false,
+    "cpuBudgetMs": 250,
+    "memoryMb": 512
+  },
+  "permissions": {
+    "domains": [
+      "api.mangadex.org"
+    ],
+    "paths": []
+  }
+}
