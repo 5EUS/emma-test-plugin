@@ -51,7 +51,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc sign with entitlements for dev.
-codesign --force --deep --sign - --entitlements "$PLUGIN_DIR/entitlements.plist" "$APP_DIR"
+# Ad-hoc sign for dev host execution.
+codesign --force --deep --sign - "$APP_DIR"
 
 echo "Built macOS app bundle: $APP_DIR"
