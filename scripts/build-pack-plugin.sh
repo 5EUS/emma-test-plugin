@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.PluginTemplate.plugin.json}"
+MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.TestPlugin.plugin.json}"
 OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"
 TARGETS=${TARGETS:-"osx-arm64"}
@@ -67,7 +67,7 @@ for TARGET in $TARGETS; do
   mkdir -p "$PUBLISH_DIR" "$MACOS_DIR" "$RESOURCES_DIR" "$PACK_DIR/$PLUGIN_VERSION-$TARGET"
 
   # Publish self-contained apphost for macOS to avoid system dotnet dependencies.
-  dotnet publish "$PLUGIN_DIR/EMMA.PluginTemplate.csproj" -c Release -r "$TARGET" --self-contained true -p:UseAppHost=true -o "$PUBLISH_DIR"
+  dotnet publish "$PLUGIN_DIR/EMMA.TestPlugin.csproj" -c Release -r "$TARGET" --self-contained true -p:UseAppHost=true -o "$PUBLISH_DIR"
 
   APP_RUNTIME_CONFIG=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -name "*.runtimeconfig.json" | head -n 1)
   if [[ -z "$APP_RUNTIME_CONFIG" ]]; then
