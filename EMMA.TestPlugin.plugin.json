@@ -19,7 +19,8 @@
   },
   "permissions": {
     "domains": [
-      "api.mangadex.org"
+      "api.mangadex.org",
+      "uploads.mangadex.org"
     ],
     "paths": []
   }

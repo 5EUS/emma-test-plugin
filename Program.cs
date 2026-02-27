@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 namespace EMMA.TestPlugin;
 
+// TODO IMPORTANT: again, potentially an attack surface. ideally this is all setup by PluginHost
 public static class Program
 {
     public static void Main(string[] args)
@@ -52,6 +53,12 @@ public static class Program
 
     private static int GetPort(string[] args, int defaultPort)
     {
+        var hostAssignedPort = Environment.GetEnvironmentVariable("EMMA_PLUGIN_PORT");
+        if (!string.IsNullOrWhiteSpace(hostAssignedPort) && int.TryParse(hostAssignedPort, out var parsedHostAssigned))
+        {
+            return parsedHostAssigned;
+        }
+
         var envPort = Environment.GetEnvironmentVariable("EMMA_TEST_PLUGIN_PORT");
         if (!string.IsNullOrWhiteSpace(envPort) && int.TryParse(envPort, out var parsedEnv))
         {

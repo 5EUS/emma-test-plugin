@@ -6,6 +6,7 @@ namespace EMMA.TestPlugin.Services;
 
 /// <summary>
 /// Minimal control surface for the test plugin.
+/// TODO IMPORTANT: this is a big attack surface
 /// </summary>
 public sealed class TestPluginControlService(ILogger<TestPluginControlService> logger) : PluginControl.PluginControlBase
 {
@@ -55,7 +56,9 @@ public sealed class TestPluginControlService(ILogger<TestPluginControlService> l
             "video"
         });
 
-        response.Permissions.Domains.Add("example.com");
+        // TODO IMPORTANT: this is a big attack surface
+        response.Permissions.Domains.Add("api.mangadex.org");
+        response.Permissions.Domains.Add("uploads.mangadex.org");
         response.Permissions.Paths.Add("/plugin-data");
 
         return Task.FromResult(response);
