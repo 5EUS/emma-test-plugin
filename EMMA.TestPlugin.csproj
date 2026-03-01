@@ -1,17 +1,31 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
-
-  <ItemGroup>
-    <ProjectReference Include="..\EMMA.Contracts\EMMA.Contracts.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
-  </ItemGroup>
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PluginTransport Condition="'$(PluginTransport)' == ''">AspNet</PluginTransport>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PluginTransport)' == 'AspNet'">
+    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_ASPNET</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PluginTransport)' == 'Wasm'">
+    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_WASM</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <Compile Remove="Services\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(PluginTransport)' == 'AspNet'">
+    <ProjectReference Include="..\EMMA.Contracts\EMMA.Contracts.csproj" />
+    <ProjectReference Include="..\EMMA.Plugin.AspNetCore\EMMA.Plugin.AspNetCore.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
+  </ItemGroup>
 
 </Project>

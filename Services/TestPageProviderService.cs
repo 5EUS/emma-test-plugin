@@ -8,10 +8,10 @@ namespace EMMA.TestPlugin.Services;
 /// Minimal page provider stub for testing.
 /// </summary>
 public sealed class TestPageProviderService(
-    MangadexClient mangadexClient,
+    ITestPluginRuntime runtime,
     ILogger<TestPageProviderService> logger) : PageProvider.PageProviderBase
 {
-    private readonly MangadexClient _mangadexClient = mangadexClient;
+    private readonly ITestPluginRuntime _runtime = runtime;
     private readonly ILogger<TestPageProviderService> _logger = logger;
 
     public override async Task<ChaptersResponse> GetChapters(ChaptersRequest request, ServerCallContext context)
@@ -25,7 +25,7 @@ public sealed class TestPageProviderService(
             request.MediaId);
 
         var response = new ChaptersResponse();
-        var chapters = await _mangadexClient.GetChaptersAsync(request.MediaId, context.CancellationToken);
+        var chapters = await _runtime.GetChaptersAsync(request.MediaId, context.CancellationToken);
         response.Chapters.AddRange(chapters);
         return response;
     }
@@ -43,7 +43,7 @@ public sealed class TestPageProviderService(
             request.Index);
 
         var response = new PageResponse();
-        var page = await _mangadexClient.GetPageAsync(request.ChapterId, request.Index, context.CancellationToken);
+        var page = await _runtime.GetPageAsync(request.ChapterId, request.Index, context.CancellationToken);
         if (page is not null)
         {
             response.Page = page;

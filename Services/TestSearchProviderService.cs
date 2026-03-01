@@ -8,10 +8,10 @@ namespace EMMA.TestPlugin.Services;
 /// Minimal search provider stub for testing.
 /// </summary>
 public sealed class TestSearchProviderService(
-    MangadexClient mangadexClient,
+    ITestPluginRuntime runtime,
     ILogger<TestSearchProviderService> logger) : SearchProvider.SearchProviderBase
 {
-    private readonly MangadexClient _mangadexClient = mangadexClient;
+    private readonly ITestPluginRuntime _runtime = runtime;
     private readonly ILogger<TestSearchProviderService> _logger = logger;
 
     public override async Task<SearchResponse> Search(SearchRequest request, ServerCallContext context)
@@ -25,7 +25,7 @@ public sealed class TestSearchProviderService(
             request.Query);
 
         var response = new SearchResponse();
-        var results = await _mangadexClient.SearchAsync(request.Query ?? string.Empty, context.CancellationToken);
+        var results = await _runtime.SearchAsync(request.Query ?? string.Empty, context.CancellationToken);
         response.Results.AddRange(results);
         return response;
     }

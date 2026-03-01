@@ -1,5 +1,4 @@
 using EMMA.Contracts.Plugins;
-using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 
@@ -8,11 +7,11 @@ namespace EMMA.TestPlugin.Services;
 /// <summary>
 /// Minimal video provider stub for testing.
 /// </summary>
-public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> logger) : VideoProvider.VideoProviderBase
+public sealed class TestVideoProviderService(
+    ITestPluginRuntime runtime,
+    ILogger<TestVideoProviderService> logger) : VideoProvider.VideoProviderBase
 {
-    private const string DemoVideoId = "demo-video-1";
-    private const string DemoStreamId = "stream-1";
-    private const string DemoPlaylistUri = "https://example.invalid/demo/playlist.m3u8";
+    private readonly ITestPluginRuntime _runtime = runtime;
     private readonly ILogger<TestVideoProviderService> _logger = logger;
 
     public override Task<StreamResponse> GetStreams(StreamRequest request, ServerCallContext context)
@@ -25,19 +24,7 @@ public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> l
             correlationId,
             request.MediaId);
 
-        var response = new StreamResponse();
-
-        if (string.Equals(request.MediaId, DemoVideoId, StringComparison.OrdinalIgnoreCase))
-        {
-            response.Streams.Add(new StreamInfo
-            {
-                Id = DemoStreamId,
-                Label = "Test Stream",
-                PlaylistUri = DemoPlaylistUri
-            });
-        }
-
-        return Task.FromResult(response);
+        return _runtime.GetStreamsAsync(request.MediaId, context.CancellationToken);
     }
 
     public override Task<SegmentResponse> GetSegment(SegmentRequest request, ServerCallContext context)
@@ -52,17 +39,10 @@ public sealed class TestVideoProviderService(ILogger<TestVideoProviderService> l
             request.StreamId,
             request.Sequence);
 
-        if (string.Equals(request.MediaId, DemoVideoId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(request.StreamId, DemoStreamId, StringComparison.OrdinalIgnoreCase)
-            && request.Sequence == 0)
-        {
-            return Task.FromResult(new SegmentResponse
-            {
-                ContentType = "video/mp2t",
-                Payload = ByteString.CopyFromUtf8("segment-0")
-            });
-        }
-
-        return Task.FromResult(new SegmentResponse());
+        return _runtime.GetSegmentAsync(
+            request.MediaId,
+            request.StreamId,
+            request.Sequence,
+            context.CancellationToken);
     }
 }
