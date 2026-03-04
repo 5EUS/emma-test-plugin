@@ -14,6 +14,7 @@
 
   <PropertyGroup Condition="'$(PluginTransport)' == 'Wasm'">
     <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_WASM</DefineConstants>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">

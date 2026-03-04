@@ -55,14 +55,26 @@ build_wasm_component() {
     expected_name="$(basename "$WASM_PROJECT_PATH" .csproj).wasm"
   fi
 
+  local project_dir
+  project_dir="$(dirname "$WASM_PROJECT_PATH")"
+
   local built_wasm
-  built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "$expected_name" | head -n 1)"
+  built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/$expected_name" 2>/dev/null | head -n 1)"
+
   if [[ -z "$built_wasm" ]]; then
-    built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "*.wasm" | head -n 1)"
+    built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/*.wasm" ! -name "dotnet.wasm" 2>/dev/null | head -n 1)"
   fi
 
   if [[ -z "$built_wasm" ]]; then
-    echo "No .wasm output found under: $WASM_BUILD_OUTPUT" >&2
+    built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "$expected_name" 2>/dev/null | head -n 1)"
+  fi
+
+  if [[ -z "$built_wasm" ]]; then
+    built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "*.wasm" ! -name "dotnet.wasm" 2>/dev/null | head -n 1)"
+  fi
+
+  if [[ -z "$built_wasm" ]]; then
+    echo "No bundled .wasm output found for: $expected_name" >&2
     echo "Ensure the project is wasm-capable (for example, target wasi-wasm) or set WASM_MODULE_PATH to an existing component." >&2
     exit 1
   fi
