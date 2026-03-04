@@ -368,9 +368,31 @@ public static partial class Program
                 return payload;
             }
 
-            if (File.Exists(trimmed))
+            var candidates = new List<string>();
+            candidates.Add(trimmed);
+
+            var withoutLeadingSlash = trimmed.TrimStart('/');
+            if (!string.Equals(withoutLeadingSlash, trimmed, StringComparison.Ordinal))
             {
-                return File.ReadAllText(trimmed);
+                candidates.Add(withoutLeadingSlash);
+                candidates.Add(Path.Combine(".", withoutLeadingSlash));
+            }
+
+            if (trimmed.StartsWith("/.hostbridge/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relativeHostBridge = ".hostbridge/" + trimmed["/.hostbridge/".Length..];
+                candidates.Add(relativeHostBridge);
+                candidates.Add(Path.Combine(".", relativeHostBridge));
+            }
+
+            foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!File.Exists(candidate))
+                {
+                    continue;
+                }
+
+                return File.ReadAllText(candidate);
             }
 
             return payload;
