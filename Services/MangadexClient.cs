@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Net;
 using System.Text.Json;
 using EMMA.Contracts.Plugins;
 using Microsoft.Extensions.Logging;
@@ -10,6 +12,16 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
     private const string MediaTypePaged = "paged";
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<MangadexClient> _logger = logger;
+    private static readonly ConcurrentDictionary<string, CachedAtHomePayload> AtHomeCache = new();
+    private static readonly TimeSpan AtHomeCacheTtl = TimeSpan.FromMinutes(2);
+    private static readonly ConcurrentDictionary<string, CachedChapterPages> ChapterPagesCache = new();
+    private static readonly TimeSpan ChapterPagesCacheTtl = TimeSpan.FromMinutes(14);
+    private static readonly SemaphoreSlim RequestGate = new(1, 1);
+    private static readonly TimeSpan MinRequestSpacing = TimeSpan.FromMilliseconds(250);
+    private static DateTimeOffset _lastRequestStartedUtc = DateTimeOffset.MinValue;
+
+    private readonly record struct CachedAtHomePayload(string PayloadJson, DateTimeOffset FetchedAtUtc);
+    private sealed record CachedChapterPages(IReadOnlyList<MediaPage> Pages, DateTimeOffset FetchedAtUtc);
 
     public async Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken)
     {
@@ -19,7 +31,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         }
 
         var path = $"/manga?title={Uri.EscapeDataString(query)}&limit=20&contentRating[]=safe&contentRating[]=suggestive&includes[]=cover_art";
-        using var response = await _httpClient.GetAsync(path, cancellationToken);
+        using var response = await GetWithPolicyAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -65,8 +77,8 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
             return [];
         }
 
-        var path = $"/manga/{Uri.EscapeDataString(mediaId)}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en";
-        using var response = await _httpClient.GetAsync(path, cancellationToken);
+        var path = $"/manga/{Uri.EscapeDataString(mediaId)}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1";
+        using var response = await GetWithPolicyAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -88,6 +100,12 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
             }
 
             var attributes = GetObject(item, "attributes");
+            var pages = attributes is null ? null : GetInt32(attributes.Value, "pages");
+            if (pages is not null && pages <= 0)
+            {
+                continue;
+            }
+
             var title = attributes is null ? null : GetString(attributes.Value, "title");
             var chapterText = attributes is null ? null : GetString(attributes.Value, "chapter");
             var number = index + 1;
@@ -123,48 +141,168 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
             return null;
         }
 
-        var path = $"/at-home/server/{Uri.EscapeDataString(chapterId)}";
-        using var response = await _httpClient.GetAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var pages = await GetChapterPagesAsync(chapterId, cancellationToken);
+        if (pageIndex >= pages.Count)
+        {
+            return null;
+        }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        return pages[pageIndex];
+    }
+
+    private async Task<IReadOnlyList<MediaPage>> GetChapterPagesAsync(string chapterId, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (ChapterPagesCache.TryGetValue(chapterId, out var cached)
+            && now - cached.FetchedAtUtc <= ChapterPagesCacheTtl)
+        {
+            return cached.Pages;
+        }
+
+        var payloadJson = await GetAtHomePayloadAsync(chapterId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
+
+        using var doc = JsonDocument.Parse(payloadJson);
 
         var baseUrl = GetString(doc.RootElement, "baseUrl");
         var chapter = GetObject(doc.RootElement, "chapter");
         if (string.IsNullOrWhiteSpace(baseUrl) || chapter is null)
         {
-            return null;
+            return [];
         }
 
         var hash = GetString(chapter.Value, "hash");
         var files = GetArray(chapter.Value, "data");
+        var dataPathSegment = "data";
+        if (files is null || files.Value.GetArrayLength() == 0)
+        {
+            files = GetArray(chapter.Value, "dataSaver");
+            dataPathSegment = "data-saver";
+        }
+
         if (string.IsNullOrWhiteSpace(hash) || files is null)
         {
-            return null;
+            return [];
         }
 
-        var items = files.Value.EnumerateArray().ToList();
-        if (pageIndex >= items.Count)
+        var pages = new List<MediaPage>();
+        var index = 0;
+        foreach (var item in files.Value.EnumerateArray())
+        {
+            var fileName = item.GetString();
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                index++;
+                continue;
+            }
+
+            var uri = new Uri($"{baseUrl}/{dataPathSegment}/{hash}/{fileName}", UriKind.Absolute);
+            pages.Add(new MediaPage
+            {
+                Id = $"{chapterId}:{index}",
+                Index = index,
+                ContentUri = uri.ToString()
+            });
+            index++;
+        }
+
+        ChapterPagesCache[chapterId] = new CachedChapterPages(pages, DateTimeOffset.UtcNow);
+        return pages;
+    }
+
+    private async Task<string?> GetAtHomePayloadAsync(string chapterId, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (AtHomeCache.TryGetValue(chapterId, out var cached)
+            && now - cached.FetchedAtUtc <= AtHomeCacheTtl)
+        {
+            return cached.PayloadJson;
+        }
+
+        var path = $"/at-home/server/{Uri.EscapeDataString(chapterId)}";
+        using var response = await GetWithPolicyAsync(path, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(payload))
         {
             return null;
         }
 
-        var fileName = items[pageIndex].GetString();
-        if (string.IsNullOrWhiteSpace(fileName))
+        AtHomeCache[chapterId] = new CachedAtHomePayload(payload, DateTimeOffset.UtcNow);
+        return payload;
+    }
+
+    private async Task<HttpResponseMessage> GetWithPolicyAsync(string path, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= 4; attempt++)
         {
-            return null;
+            await WaitForRequestSlotAsync(cancellationToken);
+
+            var response = await _httpClient.GetAsync(path, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return response;
+            }
+
+            var statusCode = (int)response.StatusCode;
+            var transient = response.StatusCode == (HttpStatusCode)429
+                || response.StatusCode is HttpStatusCode.BadGateway
+                    or HttpStatusCode.ServiceUnavailable
+                    or HttpStatusCode.GatewayTimeout;
+
+            if (!transient || attempt == 4)
+            {
+                return response;
+            }
+
+            var delay = ResolveRetryDelay(response, attempt);
+            _logger.LogWarning(
+                "Mangadex transient HTTP {StatusCode} for {Path}; retrying in {DelayMs}ms (attempt {Attempt}/4)",
+                statusCode,
+                path,
+                (int)delay.TotalMilliseconds,
+                attempt);
+
+            response.Dispose();
+            await Task.Delay(delay, cancellationToken);
         }
 
-        var uri = new Uri($"{baseUrl}/data/{hash}/{fileName}", UriKind.Absolute);
-        var pageId = $"{chapterId}:{pageIndex}";
+        throw new InvalidOperationException("Unreachable retry path.");
+    }
 
-        return new MediaPage
+    private async Task WaitForRequestSlotAsync(CancellationToken cancellationToken)
+    {
+        await RequestGate.WaitAsync(cancellationToken);
+        try
         {
-            Id = pageId,
-            Index = pageIndex,
-            ContentUri = uri.ToString()
-        };
+            var now = DateTimeOffset.UtcNow;
+            var elapsed = now - _lastRequestStartedUtc;
+            if (elapsed < MinRequestSpacing)
+            {
+                await Task.Delay(MinRequestSpacing - elapsed, cancellationToken);
+            }
+
+            _lastRequestStartedUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            RequestGate.Release();
+        }
+    }
+
+    private static TimeSpan ResolveRetryDelay(HttpResponseMessage response, int attempt)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+        {
+            return delta;
+        }
+
+        return TimeSpan.FromMilliseconds(400 * attempt);
     }
 
     private static string? GetTitle(JsonElement item)
@@ -235,6 +373,27 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
         {
             return value.GetString();
+        }
+
+        return null;
+    }
+
+    private static int? GetInt32(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numeric))
+        {
+            return numeric;
+        }
+
+        if (value.ValueKind == JsonValueKind.String
+            && int.TryParse(value.GetString(), out var parsed))
+        {
+            return parsed;
         }
 
         return null;

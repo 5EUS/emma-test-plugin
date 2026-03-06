@@ -134,7 +134,7 @@ public static partial class Program
         var page = Mangadex.GetPageFromPayload(chapterId, pageIndex, payloadJson);
         if (page is null)
         {
-            return string.Empty;
+            return "null";
         }
 
         return JsonSerializer.Serialize(
@@ -216,6 +216,12 @@ public static partial class Program
                 }
 
                 var attributes = GetObject(item, "attributes");
+                var pages = attributes is null ? null : GetInt32(attributes.Value, "pages");
+                if (pages is not null && pages <= 0)
+                {
+                    continue;
+                }
+
                 var title = attributes is null ? null : GetString(attributes.Value, "title");
                 var chapterText = attributes is null ? null : GetString(attributes.Value, "chapter");
                 var number = index + 1;
@@ -257,6 +263,13 @@ public static partial class Program
 
             var hash = GetString(chapter.Value, "hash");
             var files = GetArray(chapter.Value, "data");
+            var dataPathSegment = "data";
+            if (files is null || files.Value.GetArrayLength() == 0)
+            {
+                files = GetArray(chapter.Value, "dataSaver");
+                dataPathSegment = "data-saver";
+            }
+
             if (string.IsNullOrWhiteSpace(hash) || files is null)
             {
                 return null;
@@ -279,7 +292,7 @@ public static partial class Program
             return new PageItem(
                 pageId,
                 pageIndex,
-                $"{baseUrl}/data/{hash}/{fileName}");
+                $"{baseUrl}/{dataPathSegment}/{hash}/{fileName}");
         }
 
         private static string? GetTitle(JsonElement item)
@@ -350,6 +363,27 @@ public static partial class Program
             if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
             {
                 return value.GetString();
+            }
+
+            return null;
+        }
+
+        private static int? GetInt32(JsonElement element, string name)
+        {
+            if (!element.TryGetProperty(name, out var value))
+            {
+                return null;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numeric))
+            {
+                return numeric;
+            }
+
+            if (value.ValueKind == JsonValueKind.String
+                && int.TryParse(value.GetString(), out var parsed))
+            {
+                return parsed;
             }
 
             return null;
