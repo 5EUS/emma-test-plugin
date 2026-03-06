@@ -6,7 +6,12 @@ PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.TestPlugin.plugin.json}"
 OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"
-TARGETS=${TARGETS:-"osx-arm64"}
+HOST_OS="$(uname -s)"
+DEFAULT_TARGETS="osx-arm64"
+if [[ "$HOST_OS" == "Linux" ]]; then
+  DEFAULT_TARGETS="linux-x64"
+fi
+TARGETS=${TARGETS:-"$DEFAULT_TARGETS"}
 WASM_MODULE_PATH="${WASM_MODULE_PATH:-$OUT_DIR/wasm/plugin.wasm}"
 WASM_PROJECT_PATH="${WASM_PROJECT_PATH:-$PLUGIN_DIR/EMMA.TestPlugin.csproj}"
 WASM_BUILD_CONFIGURATION="${WASM_BUILD_CONFIGURATION:-Release}"
@@ -199,7 +204,11 @@ for TARGET in $TARGETS; do
 </plist>
 PLIST
 
-    codesign --force --deep --sign - --entitlements "$PLUGIN_DIR/entitlements.plist" "$APP_DIR"
+    if command -v codesign >/dev/null 2>&1; then
+      codesign --force --deep --sign - --entitlements "$PLUGIN_DIR/entitlements.plist" "$APP_DIR"
+    else
+      echo "Warning: codesign not found; skipping macOS app signing for $APP_DIR" >&2
+    fi
     cp -R "$APP_DIR" "$PLUGIN_OUT_DIR/"
   elif [[ "$TARGET" == linux-* ]]; then
     dotnet publish "$PLUGIN_DIR/EMMA.TestPlugin.csproj" -c Release -r "$TARGET" --self-contained true -p:UseAppHost=true -o "$PUBLISH_DIR"
@@ -213,15 +222,20 @@ PLIST
     APP_EXECUTABLE=$(basename "$APP_RUNTIME_CONFIG" .runtimeconfig.json)
     ENTRYPOINT_NAME="$APP_BUNDLE_NAME"
 
-    mkdir -p "$PLUGIN_OUT_DIR/linux"
-    cp -R "$PUBLISH_DIR"/. "$PLUGIN_OUT_DIR/linux/"
-    if [[ -f "$PLUGIN_OUT_DIR/linux/$APP_EXECUTABLE" && "$APP_EXECUTABLE" != "$ENTRYPOINT_NAME" ]]; then
-      cp "$PLUGIN_OUT_DIR/linux/$APP_EXECUTABLE" "$PLUGIN_OUT_DIR/linux/$ENTRYPOINT_NAME"
+    cp -R "$PUBLISH_DIR"/. "$PLUGIN_OUT_DIR/"
+    if [[ -f "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" && "$APP_EXECUTABLE" != "$ENTRYPOINT_NAME" ]]; then
+      cp "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" "$PLUGIN_OUT_DIR/$ENTRYPOINT_NAME"
     fi
 
-    chmod +x "$PLUGIN_OUT_DIR/linux/$APP_EXECUTABLE" || true
-    chmod +x "$PLUGIN_OUT_DIR/linux/$ENTRYPOINT_NAME" || true
-    find "$PLUGIN_OUT_DIR/linux" -maxdepth 1 -type f -name "*.so" -exec chmod +x {} \; || true
+    chmod +x "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" || true
+    chmod +x "$PLUGIN_OUT_DIR/$ENTRYPOINT_NAME" || true
+    find "$PLUGIN_OUT_DIR" -type f -name "*.so" -exec chmod +x {} \; || true
+
+    while IFS= read -r candidate; do
+      if file -b "$candidate" | grep -qiE 'ELF .*executable|ELF .*shared object'; then
+        chmod +x "$candidate" || true
+      fi
+    done < <(find "$PLUGIN_OUT_DIR" -type f)
   elif [[ "$TARGET" == wasm* ]]; then
     if [[ "$SKIP_WASM_BUILD" != "1" ]]; then
       build_wasm_component

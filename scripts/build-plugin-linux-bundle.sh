@@ -40,7 +40,7 @@ fi
 PLUGIN_ID="${manifest_fields[0]}"
 ENTRYPOINT_NAME="${manifest_fields[1]}"
 PLUGIN_OUT_DIR="$OUT_DIR/$PLUGIN_ID"
-PLUGIN_ROOT="$PLUGIN_OUT_DIR/linux"
+PLUGIN_ROOT="$PLUGIN_OUT_DIR"
 PUBLISH_DIR="$OUT_DIR/publish-$RID"
 
 rm -rf "$PLUGIN_ROOT" "$PUBLISH_DIR"
