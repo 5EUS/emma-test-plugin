@@ -27,6 +27,12 @@
   "mediaTypes": [
     "paged"
   ],
+  "thumbnail": {
+    "aspectRatio": 0.7,
+    "fit": "cover",
+    "width": 256,
+    "height": 384
+  },
   "capabilities": {
     "network": [
       "https"

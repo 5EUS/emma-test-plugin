@@ -180,11 +180,16 @@ public static partial class Program
                     title = "Untitled";
                 }
 
+                var thumbnailUrl = BuildThumbnailUrl(item);
+                var description = GetDescription(item);
+
                 results.Add(new SearchItem(
                     id,
                     "mangadex",
                     title,
-                    "paged"));
+                    "paged",
+                    thumbnailUrl,
+                    description));
             }
 
             return results;
@@ -305,6 +310,58 @@ public static partial class Program
 
             var titleMap = GetObject(attributes.Value, "title");
             return PickMapString(titleMap);
+        }
+
+        private static string? GetDescription(JsonElement item)
+        {
+            var attributes = GetObject(item, "attributes");
+            if (attributes is null)
+            {
+                return null;
+            }
+
+            var descriptionMap = GetObject(attributes.Value, "description");
+            return PickMapString(descriptionMap);
+        }
+
+        private static string? BuildThumbnailUrl(JsonElement item)
+        {
+            var mangaId = GetString(item, "id");
+            if (string.IsNullOrWhiteSpace(mangaId))
+            {
+                return null;
+            }
+
+            var relationships = GetArray(item, "relationships");
+            if (relationships is null)
+            {
+                return null;
+            }
+
+            foreach (var relation in relationships.Value.EnumerateArray())
+            {
+                var relationType = GetString(relation, "type");
+                if (!string.Equals(relationType, "cover_art", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var attributes = GetObject(relation, "attributes");
+                if (attributes is null)
+                {
+                    continue;
+                }
+
+                var fileName = GetString(attributes.Value, "fileName");
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    continue;
+                }
+
+                return $"https://uploads.mangadex.org/covers/{mangaId}/{fileName}";
+            }
+
+            return null;
         }
 
         private static string? PickMapString(JsonElement? map)
@@ -435,7 +492,7 @@ public static partial class Program
 
     private sealed record HandshakeResponse(string version, string message);
 
-    private sealed record SearchItem(string id, string source, string title, string mediaType);
+    private sealed record SearchItem(string id, string source, string title, string mediaType, string? thumbnailUrl = null, string? description = null);
 
     private sealed record ChapterItem(string id, int number, string title);
 
