@@ -63,8 +63,8 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
                 Source = SourceId,
                 Title = title,
                 MediaType = MediaTypePaged,
-                ThumbnailUrl = BuildThumbnailUrl(item),
-                Description = GetDescription(item)
+                ThumbnailUrl = BuildThumbnailUrl(item) ?? string.Empty,
+                Description = GetDescription(item) ?? string.Empty
             });
         }
 
@@ -150,6 +150,33 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         }
 
         return pages[pageIndex];
+    }
+
+    public async Task<(IReadOnlyList<MediaPage> Pages, bool ReachedEnd)> GetPagesAsync(
+        string chapterId,
+        int startIndex,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(chapterId) || startIndex < 0 || count <= 0)
+        {
+            return ([], true);
+        }
+
+        var pages = await GetChapterPagesAsync(chapterId, cancellationToken);
+        if (startIndex >= pages.Count)
+        {
+            return ([], true);
+        }
+
+        var max = Math.Min(pages.Count - startIndex, count);
+        var slice = pages
+            .Skip(startIndex)
+            .Take(max)
+            .ToList();
+
+        var reachedEnd = startIndex + slice.Count >= pages.Count;
+        return (slice, reachedEnd);
     }
 
     private async Task<IReadOnlyList<MediaPage>> GetChapterPagesAsync(string chapterId, CancellationToken cancellationToken)

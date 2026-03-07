@@ -9,6 +9,7 @@ public interface ITestPluginRuntime
     Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<MediaChapter>> GetChaptersAsync(string mediaId, CancellationToken cancellationToken);
     Task<MediaPage?> GetPageAsync(string chapterId, int pageIndex, CancellationToken cancellationToken);
+    Task<(IReadOnlyList<MediaPage> Pages, bool ReachedEnd)> GetPagesAsync(string chapterId, int startIndex, int count, CancellationToken cancellationToken);
     Task<StreamResponse> GetStreamsAsync(string mediaId, CancellationToken cancellationToken);
     Task<SegmentResponse> GetSegmentAsync(string mediaId, string streamId, int sequence, CancellationToken cancellationToken);
 }

@@ -50,4 +50,31 @@ public sealed class TestPageProviderService(
         }
         return response;
     }
+
+    public override async Task<PagesResponse> GetPages(PagesRequest request, ServerCallContext context)
+    {
+        TestPluginRpcGuard.EnsureActive(context);
+        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+
+        _logger.LogInformation(
+            "Pages request {CorrelationId} mediaId={MediaId} chapterId={ChapterId} startIndex={StartIndex} count={Count}",
+            correlationId,
+            request.MediaId,
+            request.ChapterId,
+            request.StartIndex,
+            request.Count);
+
+        var (pages, reachedEnd) = await _runtime.GetPagesAsync(
+            request.ChapterId,
+            request.StartIndex,
+            request.Count,
+            context.CancellationToken);
+
+        var response = new PagesResponse
+        {
+            ReachedEnd = reachedEnd
+        };
+        response.Pages.AddRange(pages);
+        return response;
+    }
 }

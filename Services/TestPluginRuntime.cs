@@ -73,6 +73,15 @@ public sealed class TestPluginRuntime(
         return _mangadexClient.GetPageAsync(chapterId, pageIndex, cancellationToken);
     }
 
+    public Task<(IReadOnlyList<MediaPage> Pages, bool ReachedEnd)> GetPagesAsync(
+        string chapterId,
+        int startIndex,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        return _mangadexClient.GetPagesAsync(chapterId, startIndex, count, cancellationToken);
+    }
+
     public Task<StreamResponse> GetStreamsAsync(string mediaId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
