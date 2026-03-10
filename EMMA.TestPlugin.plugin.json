@@ -20,6 +20,10 @@
         "page": {
           "method": "GET",
           "urlTemplate": "https://api.mangadex.org/at-home/server/{arg1}"
+        },
+        "pages": {
+          "method": "GET",
+          "urlTemplate": "https://api.mangadex.org/at-home/server/{arg1}"
         }
       }
     }
