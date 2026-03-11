@@ -215,6 +215,10 @@ if [[ ! -f "$MANIFEST_PATH" ]]; then
   exit 1
 fi
 
+if [[ -x "$ROOT_DIR/scripts/plugin-validate-manifest.sh" ]]; then
+  "$ROOT_DIR/scripts/plugin-validate-manifest.sh" "$MANIFEST_PATH"
+fi
+
 manifest_fields=()
 while IFS= read -r line; do
   manifest_fields+=("$line")

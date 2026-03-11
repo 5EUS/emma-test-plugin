@@ -9,9 +9,9 @@ PUBLISH_DIR="$OUT_DIR/publish"
 rm -rf "$PUBLISH_DIR"
 mkdir -p "$PUBLISH_DIR"
 
-dotnet publish "$PLUGIN_DIR/EMMA.PluginTemplate.csproj" -c Release -o "$PUBLISH_DIR"
+dotnet publish "$PLUGIN_DIR/EMMA.TestPlugin.csproj" -c Release -o "$PUBLISH_DIR"
 
-ENTRYPOINT="EMMA.PluginTemplate"
+ENTRYPOINT="EMMA.TestPlugin"
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* || "$OSTYPE" == "win32"* ]]; then
   ENTRYPOINT+=".exe"
 fi

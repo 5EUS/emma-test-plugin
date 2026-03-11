@@ -14,50 +14,6 @@ public sealed class TestPluginRuntime(
     private readonly MangadexClient _mangadexClient = mangadexClient;
     private readonly ILogger<TestPluginRuntime> _logger = logger;
 
-    public Task<HealthResponse> GetHealthAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var version = typeof(TestPluginRuntime).Assembly.GetName().Version?.ToString() ?? "dev";
-
-        return Task.FromResult(new HealthResponse
-        {
-            Status = "ok",
-            Version = version,
-            Message = "EMMA test plugin ready"
-        });
-    }
-
-    public Task<CapabilitiesResponse> GetCapabilitiesAsync(CancellationToken cancellationToken) // TODO can spoof
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var response = new CapabilitiesResponse
-        {
-            Budgets = new CapabilityBudgets
-            {
-                CpuBudgetMs = 150,
-                MemoryMb = 128
-            },
-            Permissions = new CapabilityPermissions()
-        };
-
-        response.Capabilities.AddRange(new[]
-        {
-            "health",
-            "capabilities",
-            "test-plugin",
-            "search",
-            "pages",
-            "video"
-        });
-
-        response.Permissions.Domains.Add("api.mangadex.org");
-        response.Permissions.Domains.Add("uploads.mangadex.org");
-        response.Permissions.Paths.Add("/plugin-data");
-
-        return Task.FromResult(response);
-    }
-
     public Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken)
     {
         return _mangadexClient.SearchAsync(query, cancellationToken);

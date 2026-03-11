@@ -1,4 +1,5 @@
 using EMMA.Contracts.Plugins;
+using EMMA.Plugin.AspNetCore;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 
@@ -16,8 +17,7 @@ public sealed class TestPageProviderService(
 
     public override async Task<ChaptersResponse> GetChapters(ChaptersRequest request, ServerCallContext context)
     {
-        TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+        var correlationId = PluginRequestContext.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Chapters request {CorrelationId} mediaId={MediaId}",
@@ -32,8 +32,7 @@ public sealed class TestPageProviderService(
 
     public override async Task<PageResponse> GetPage(PageRequest request, ServerCallContext context)
     {
-        TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+        var correlationId = PluginRequestContext.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Page request {CorrelationId} mediaId={MediaId} chapterId={ChapterId} index={Index}",
@@ -53,8 +52,7 @@ public sealed class TestPageProviderService(
 
     public override async Task<PagesResponse> GetPages(PagesRequest request, ServerCallContext context)
     {
-        TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+        var correlationId = PluginRequestContext.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Pages request {CorrelationId} mediaId={MediaId} chapterId={ChapterId} startIndex={StartIndex} count={Count}",

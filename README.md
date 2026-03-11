@@ -28,6 +28,20 @@ Use the helper script from repo root:
 ./scripts/run-plugin-host-with-test-plugin.sh
 ```
 
+## Validate and pack
+
+From repo root, use the canonical pack flow (includes manifest validation):
+
+```bash
+./scripts/plugin-pack.sh ./src/EMMA.TestPlugin
+```
+
+Build wasm package variant:
+
+```bash
+TARGETS="wasm" ./scripts/plugin-pack.sh ./src/EMMA.TestPlugin
+```
+
 ## Mangadex data
 
 The test plugin queries live data from the Mangadex API by default.

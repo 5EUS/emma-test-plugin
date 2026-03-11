@@ -1,48 +1,172 @@
 #if PLUGIN_TRANSPORT_ASPNET
 using EMMA.Plugin.AspNetCore;
 using EMMA.TestPlugin.Services;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 #else
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 #endif
 
 namespace EMMA.TestPlugin;
 
-// TODO IMPORTANT: again, potentially an attack surface. ideally this is all setup by PluginHost
 public static partial class Program
 {
+    private const string DevModeEnvVar = "EMMA_PLUGIN_DEV_MODE";
+
 #if PLUGIN_TRANSPORT_ASPNET
+    private static readonly PluginManifestDefaults ControlDefaults = LoadManifestDefaults();
+
     public static void Main(string[] args)
     {
+        var devMode = IsDevelopmentMode();
         var hostOptions = new PluginAspNetHostOptions(
             DefaultPort: 5005,
-            PortEnvironmentVariables: ["EMMA_PLUGIN_PORT", "EMMA_TEST_PLUGIN_PORT"],
+            PortEnvironmentVariables: devMode
+                ? ["EMMA_PLUGIN_PORT", "EMMA_TEST_PLUGIN_PORT"]
+                : ["EMMA_PLUGIN_PORT"],
+            PortArgumentName: devMode ? "--port" : string.Empty,
             RootMessage: "EMMA test plugin is running.");
 
-        var app = PluginAspNetHost.Create(args, hostOptions, services =>
-        {
-            services.AddGrpc();
-            services.AddHttpClient<MangadexClient>(client =>
+        PluginBuilder.Create(args, hostOptions)
+            .ConfigureServices(services =>
             {
-                client.BaseAddress = new Uri("https://api.mangadex.org");
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("EMMA-TestPlugin/1.0");
-                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
-            });
-            services.AddScoped<ITestPluginRuntime, TestPluginRuntime>();
-        });
+                services.AddHttpClient<MangadexClient>(client =>
+                {
+                    client.BaseAddress = new Uri("https://api.mangadex.org");
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("EMMA-TestPlugin/1.0");
+                    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+                });
+                services.AddScoped<ITestPluginRuntime, TestPluginRuntime>();
+            })
+            .UseDefaultControlService(options =>
+            {
+                options.Message = "EMMA test plugin ready";
+                options.CpuBudgetMs = ControlDefaults.CpuBudgetMs;
+                options.MemoryMb = ControlDefaults.MemoryMb;
+                options.Capabilities.Add("test-plugin");
+                options.Capabilities.Add("search");
+                options.Capabilities.Add("pages");
+                options.Capabilities.Add("video");
+                options.Domains.Clear();
+                options.Paths.Clear();
+                foreach (var domain in ControlDefaults.Domains)
+                {
+                    options.Domains.Add(domain);
+                }
 
-        PluginAspNetHost.MapDefaultEndpoints(app, hostOptions);
-        app.MapGrpcService<TestPluginControlService>();
-        app.MapGrpcService<TestSearchProviderService>();
-        app.MapGrpcService<TestPageProviderService>();
-        app.MapGrpcService<TestVideoProviderService>();
-
-        app.Run();
+                foreach (var path in ControlDefaults.Paths)
+                {
+                    options.Paths.Add(path);
+                }
+            })
+            .AddSearchProvider<TestSearchProviderService>()
+            .AddPageProvider<TestPageProviderService>()
+            .AddVideoProvider<TestVideoProviderService>()
+            .Run(mapDefaultEndpoints: devMode);
     }
+
+    private static bool IsDevelopmentMode()
+    {
+        var value = Environment.GetEnvironmentVariable(DevModeEnvVar);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (bool.TryParse(value, out var parsedBool))
+        {
+            return parsedBool;
+        }
+
+        return value.Trim() switch
+        {
+            "1" or "yes" or "on" => true,
+            _ => false
+        };
+    }
+
+    private static PluginManifestDefaults LoadManifestDefaults()
+    {
+        var fallback = new PluginManifestDefaults(
+            250,
+            512,
+            ["api.mangadex.org", "uploads.mangadex.org"],
+            []);
+
+        foreach (var manifestPath in EnumerateManifestCandidates())
+        {
+            if (!File.Exists(manifestPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                var root = doc.RootElement;
+
+                var capabilities = root.TryGetProperty("capabilities", out var caps) && caps.ValueKind == JsonValueKind.Object
+                    ? caps
+                    : default;
+
+                var cpu = capabilities.ValueKind == JsonValueKind.Object
+                    && capabilities.TryGetProperty("cpuBudgetMs", out var cpuElement)
+                    && cpuElement.TryGetInt32(out var parsedCpu)
+                        ? parsedCpu
+                        : fallback.CpuBudgetMs;
+
+                var memory = capabilities.ValueKind == JsonValueKind.Object
+                    && capabilities.TryGetProperty("memoryMb", out var memElement)
+                    && memElement.TryGetInt32(out var parsedMem)
+                        ? parsedMem
+                        : fallback.MemoryMb;
+
+                var permissions = root.TryGetProperty("permissions", out var perms) && perms.ValueKind == JsonValueKind.Object
+                    ? perms
+                    : default;
+
+                var domains = ReadStringArray(permissions, "domains", fallback.Domains);
+                var paths = ReadStringArray(permissions, "paths", fallback.Paths);
+
+                return new PluginManifestDefaults(cpu, memory, domains, paths);
+            }
+            catch
+            {
+            }
+        }
+
+        return fallback;
+    }
+
+    private static IEnumerable<string> EnumerateManifestCandidates()
+    {
+        yield return Path.Combine(AppContext.BaseDirectory, "EMMA.TestPlugin.plugin.json");
+        yield return Path.Combine(Directory.GetCurrentDirectory(), "EMMA.TestPlugin.plugin.json");
+        yield return Path.Combine(Directory.GetCurrentDirectory(), "src", "EMMA.TestPlugin", "EMMA.TestPlugin.plugin.json");
+    }
+
+    private static string[] ReadStringArray(JsonElement permissions, string propertyName, IReadOnlyList<string> fallback)
+    {
+        if (permissions.ValueKind != JsonValueKind.Object
+            || !permissions.TryGetProperty(propertyName, out var element)
+            || element.ValueKind != JsonValueKind.Array)
+        {
+            return [.. fallback];
+        }
+
+        return [.. element.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)];
+    }
+
+    private readonly record struct PluginManifestDefaults(
+        int CpuBudgetMs,
+        int MemoryMb,
+        string[] Domains,
+        string[] Paths);
 #else
     private static readonly WasmMangadexClient Mangadex = CreateMangadexClient();
 
@@ -177,31 +301,15 @@ public static partial class Program
 
     private sealed class WasmMangadexClient
     {
-        private const string DirectHttpEnvVar = "EMMA_WASM_DIRECT_HTTP";
-        private const string SearchTemplate = "https://api.mangadex.org/manga?title={0}&limit=20&contentRating[]=safe&contentRating[]=suggestive&includes[]=cover_art";
-        private const string ChaptersTemplate = "https://api.mangadex.org/manga/{0}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1";
-        private const string AtHomeTemplate = "https://api.mangadex.org/at-home/server/{0}";
-        private static readonly HttpClient DirectHttpClient = CreateDirectHttpClient();
-
         public IReadOnlyList<SearchItem> SearchFromPayload(string query, string payloadJson)
         {
             payloadJson = ResolvePayloadContent(payloadJson);
-
-            if (string.IsNullOrWhiteSpace(payloadJson) && IsDirectHttpEnabled())
-            {
-                var directPayload = TryFetchJson(string.Format(SearchTemplate, Uri.EscapeDataString(query ?? string.Empty)));
-                if (!string.IsNullOrWhiteSpace(directPayload))
-                {
-                    payloadJson = directPayload;
-                }
-            }
 
             if (string.IsNullOrWhiteSpace(payloadJson))
             {
                 return [];
             }
 
-            // TODO(dotnet-wasm-http): Remove host-supplied payload bridge once outbound HttpClient is supported for .NET WASM components.
             using var doc = JsonDocument.Parse(payloadJson);
             var data = GetArray(doc.RootElement, "data");
             if (data is null)
@@ -242,17 +350,6 @@ public static partial class Program
         public IReadOnlyList<ChapterItem> GetChaptersFromPayload(string mediaId, string payloadJson)
         {
             payloadJson = ResolvePayloadContent(payloadJson);
-
-            if (string.IsNullOrWhiteSpace(payloadJson)
-                && IsDirectHttpEnabled()
-                && !string.IsNullOrWhiteSpace(mediaId))
-            {
-                var directPayload = TryFetchJson(string.Format(ChaptersTemplate, Uri.EscapeDataString(mediaId)));
-                if (!string.IsNullOrWhiteSpace(directPayload))
-                {
-                    payloadJson = directPayload;
-                }
-            }
 
             if (string.IsNullOrWhiteSpace(payloadJson))
             {
@@ -309,52 +406,22 @@ public static partial class Program
         {
             payloadJson = ResolvePayloadContent(payloadJson);
 
-            if (string.IsNullOrWhiteSpace(payloadJson)
-                && IsDirectHttpEnabled()
-                && !string.IsNullOrWhiteSpace(chapterId))
-            {
-                var directPayload = TryFetchJson(string.Format(AtHomeTemplate, Uri.EscapeDataString(chapterId)));
-                if (!string.IsNullOrWhiteSpace(directPayload))
-                {
-                    payloadJson = directPayload;
-                }
-            }
-
             if (string.IsNullOrWhiteSpace(chapterId) || pageIndex < 0 || string.IsNullOrWhiteSpace(payloadJson))
             {
                 return null;
             }
 
-            using var doc = JsonDocument.Parse(payloadJson);
-
-            var baseUrl = GetString(doc.RootElement, "baseUrl");
-            var chapter = GetObject(doc.RootElement, "chapter");
-            if (string.IsNullOrWhiteSpace(baseUrl) || chapter is null)
+            if (!TryParseAtHomePayload(payloadJson, out var atHomePayload))
             {
                 return null;
             }
 
-            var hash = GetString(chapter.Value, "hash");
-            var files = GetArray(chapter.Value, "data");
-            var dataPathSegment = "data";
-            if (files is null || files.Value.GetArrayLength() == 0)
-            {
-                files = GetArray(chapter.Value, "dataSaver");
-                dataPathSegment = "data-saver";
-            }
-
-            if (string.IsNullOrWhiteSpace(hash) || files is null)
+            if (pageIndex >= atHomePayload.Files.Count)
             {
                 return null;
             }
 
-            var items = files.Value.EnumerateArray().ToList();
-            if (pageIndex >= items.Count)
-            {
-                return null;
-            }
-
-            var fileName = items[pageIndex].GetString();
+            var fileName = atHomePayload.Files[pageIndex];
             if (string.IsNullOrWhiteSpace(fileName))
             {
                 return null;
@@ -365,7 +432,7 @@ public static partial class Program
             return new PageItem(
                 pageId,
                 pageIndex,
-                $"{baseUrl}/{dataPathSegment}/{hash}/{fileName}");
+                $"{atHomePayload.BaseUrl}/{atHomePayload.DataPathSegment}/{atHomePayload.Hash}/{fileName}");
         }
 
         public IReadOnlyList<PageItem> GetPagesFromPayload(
@@ -376,17 +443,6 @@ public static partial class Program
         {
             payloadJson = ResolvePayloadContent(payloadJson);
 
-            if (string.IsNullOrWhiteSpace(payloadJson)
-                && IsDirectHttpEnabled()
-                && !string.IsNullOrWhiteSpace(chapterId))
-            {
-                var directPayload = TryFetchJson(string.Format(AtHomeTemplate, Uri.EscapeDataString(chapterId)));
-                if (!string.IsNullOrWhiteSpace(directPayload))
-                {
-                    payloadJson = directPayload;
-                }
-            }
-
             if (string.IsNullOrWhiteSpace(chapterId)
                 || startIndex < 0
                 || count <= 0
@@ -395,13 +451,47 @@ public static partial class Program
                 return [];
             }
 
+            if (!TryParseAtHomePayload(payloadJson, out var atHomePayload))
+            {
+                return [];
+            }
+
+            if (startIndex >= atHomePayload.Files.Count)
+            {
+                return [];
+            }
+
+            var endExclusive = Math.Min(atHomePayload.Files.Count, startIndex + count);
+            var pages = new List<PageItem>(Math.Max(0, endExclusive - startIndex));
+
+            for (var pageIndex = startIndex; pageIndex < endExclusive; pageIndex++)
+            {
+                var fileName = atHomePayload.Files[pageIndex];
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    continue;
+                }
+
+                pages.Add(new PageItem(
+                    $"{chapterId}:{pageIndex}",
+                    pageIndex,
+                    $"{atHomePayload.BaseUrl}/{atHomePayload.DataPathSegment}/{atHomePayload.Hash}/{fileName}"));
+            }
+
+            return pages;
+        }
+
+        private static bool TryParseAtHomePayload(string payloadJson, out AtHomePayload payload)
+        {
+            payload = default;
+
             using var doc = JsonDocument.Parse(payloadJson);
 
             var baseUrl = GetString(doc.RootElement, "baseUrl");
             var chapter = GetObject(doc.RootElement, "chapter");
             if (string.IsNullOrWhiteSpace(baseUrl) || chapter is null)
             {
-                return [];
+                return false;
             }
 
             var hash = GetString(chapter.Value, "hash");
@@ -415,33 +505,17 @@ public static partial class Program
 
             if (string.IsNullOrWhiteSpace(hash) || files is null)
             {
-                return [];
+                return false;
             }
 
-            var items = files.Value.EnumerateArray().ToList();
-            if (startIndex >= items.Count)
-            {
-                return [];
-            }
+            var fileNames = files.Value.EnumerateArray()
+                .Select(file => file.GetString())
+                .Where(file => !string.IsNullOrWhiteSpace(file))
+                .Select(file => file!)
+                .ToList();
 
-            var endExclusive = Math.Min(items.Count, startIndex + count);
-            var pages = new List<PageItem>(Math.Max(0, endExclusive - startIndex));
-
-            for (var pageIndex = startIndex; pageIndex < endExclusive; pageIndex++)
-            {
-                var fileName = items[pageIndex].GetString();
-                if (string.IsNullOrWhiteSpace(fileName))
-                {
-                    continue;
-                }
-
-                pages.Add(new PageItem(
-                    $"{chapterId}:{pageIndex}",
-                    pageIndex,
-                    $"{baseUrl}/{dataPathSegment}/{hash}/{fileName}"));
-            }
-
-            return pages;
+            payload = new AtHomePayload(baseUrl, hash, dataPathSegment, fileNames);
+            return true;
         }
 
         private static string? GetTitle(JsonElement item)
@@ -653,51 +727,11 @@ public static partial class Program
             return payload;
         }
 
-        private static HttpClient CreateDirectHttpClient()
-        {
-            var client = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(2)
-            };
-            client.DefaultRequestHeaders.UserAgent.Clear();
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("EMMA-TestPlugin", "1.0"));
-            client.DefaultRequestHeaders.Accept.Clear();
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            return client;
-        }
-
-        private static string TryFetchJson(string? url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                return DirectHttpClient.GetStringAsync(url).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
-        private static bool IsDirectHttpEnabled()
-        {
-            var value = Environment.GetEnvironmentVariable(DirectHttpEnvVar);
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return false;
-            }
-
-            if (bool.TryParse(value, out var parsed))
-            {
-                return parsed;
-            }
-
-            return value.Trim() is "1" or "yes" or "on";
-        }
+        private readonly record struct AtHomePayload(
+            string BaseUrl,
+            string Hash,
+            string DataPathSegment,
+            IReadOnlyList<string> Files);
     }
 
     private sealed record HandshakeResponse(string version, string message);

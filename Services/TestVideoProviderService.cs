@@ -1,4 +1,5 @@
 using EMMA.Contracts.Plugins;
+using EMMA.Plugin.AspNetCore;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 
@@ -16,8 +17,7 @@ public sealed class TestVideoProviderService(
 
     public override Task<StreamResponse> GetStreams(StreamRequest request, ServerCallContext context)
     {
-        TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+        var correlationId = PluginRequestContext.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Streams request {CorrelationId} mediaId={MediaId}",
@@ -29,8 +29,7 @@ public sealed class TestVideoProviderService(
 
     public override Task<SegmentResponse> GetSegment(SegmentRequest request, ServerCallContext context)
     {
-        TestPluginRpcGuard.EnsureActive(context);
-        var correlationId = TestPluginRpcGuard.GetCorrelationId(context, request.Context?.CorrelationId);
+        var correlationId = PluginRequestContext.GetCorrelationId(context, request.Context?.CorrelationId);
 
         _logger.LogInformation(
             "Segment request {CorrelationId} mediaId={MediaId} streamId={StreamId} sequence={Sequence}",
