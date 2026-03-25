@@ -6,27 +6,7 @@
   "author": "EMMA",
   "protocol": "grpc",
   "runtime": {
-    "minHostVersion": "1.0.0",
-    "wasmHostBridge": {
-      "http": {
-        "search": {
-          "method": "GET",
-          "urlTemplate": "https://api.mangadex.org/manga?title={arg0}&limit=20&contentRating[]=safe&contentRating[]=suggestive&includes[]=cover_art"
-        },
-        "chapters": {
-          "method": "GET",
-          "urlTemplate": "https://api.mangadex.org/manga/{arg0}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1"
-        },
-        "page": {
-          "method": "GET",
-          "urlTemplate": "https://api.mangadex.org/at-home/server/{arg1}"
-        },
-        "pages": {
-          "method": "GET",
-          "urlTemplate": "https://api.mangadex.org/at-home/server/{arg1}"
-        }
-      }
-    }
+    "minHostVersion": "1.0.0"
   },
   "mediaTypes": [
     "paged"

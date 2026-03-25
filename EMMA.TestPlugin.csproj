@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PluginTransport Condition="'$(PluginTransport)' == ''">AspNet</PluginTransport>
+    <PluginTransport Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">Wasm</PluginTransport>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(PluginTransport)' == 'AspNet'">
@@ -14,12 +15,22 @@
 
   <PropertyGroup Condition="'$(PluginTransport)' == 'Wasm'">
     <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_WASM</DefineConstants>
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <UseAppHost>false</UseAppHost>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">
+    <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
+    <PackageReference Include="runtime.wasi-wasm.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-alpha.1.25162.1" />
+    <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-alpha.1.25162.1" Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <Compile Remove="Services\**\*.cs" />
+    <Wit Remove="**\*.wit" />
+    <Wit Include="..\EMMA.WasmRuntime.Native\wit\library.wit" World="library" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'AspNet'">

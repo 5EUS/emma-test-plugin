@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 #else
 using System.Text.Json;
+using System.Diagnostics;
+using System.Net.Http;
 using System.Text.Json.Serialization;
 #endif
 
@@ -172,8 +174,10 @@ public static partial class Program
 
     public static void Main(string[] args)
     {
-        var operation = args.Length > 0 ? args[0].ToLowerInvariant() : string.Empty;
-        var json = ExecuteOperation(operation, args);
+        var (operation, operationArgs) = NormalizeOperationArgs(args);
+        var inputPayload = ReadInputPayload();
+        EmitPayloadDiagnostics(operation, inputPayload);
+        var json = ExecuteOperationForCli(operation, operationArgs, inputPayload);
 
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -185,22 +189,21 @@ public static partial class Program
         Console.WriteLine(json);
     }
 
-    private static string ExecuteOperation(string operation, string[] args)
+    private static string ExecuteOperationForCli(string operation, string[] args, string inputPayload)
     {
         try
         {
             return operation switch
             {
-                "handshake" => JsonSerializer.Serialize(
-                    new HandshakeResponse("1.0.0", "EMMA test wasm component ready"),
-                    TestPluginWasmJsonContext.Default.HandshakeResponse),
-                "capabilities" => JsonSerializer.Serialize(
-                    new[] { "health", "search", "paged", "pages" },
-                    TestPluginWasmJsonContext.Default.StringArray),
-                "search" => Search(args),
-                "chapters" => Chapters(args),
-                "page" => Page(args),
-                "pages" => Pages(args),
+                "handshake" => JsonSerializer.Serialize(handshake(), TestPluginWasmJsonContext.Default.HandshakeResponse),
+                "capabilities" => JsonSerializer.Serialize(capabilities(), TestPluginWasmJsonContext.Default.CapabilityItemArray),
+                "search" => JsonSerializer.Serialize(search(args.Length > 0 ? args[0] : string.Empty, inputPayload), TestPluginWasmJsonContext.Default.SearchItemArray),
+                "chapters" => JsonSerializer.Serialize(chapters(args.Length > 0 ? args[0] : string.Empty, inputPayload), TestPluginWasmJsonContext.Default.ChapterItemArray),
+                "page" => SerializePageForCli(args, inputPayload),
+                "pages" => SerializePagesForCli(args, inputPayload),
+                "invoke" => SerializeInvokeForCli(args, inputPayload),
+                "benchmark" => Benchmark(args),
+                "benchmark-network" => BenchmarkNetwork(args, inputPayload),
                 _ => string.Empty
             };
         }
@@ -211,87 +214,435 @@ public static partial class Program
         }
     }
 
-    private static string Search(string[] args)
+    public static HandshakeResponse handshake()
     {
-        var query = args.Length > 1 ? args[1] : string.Empty;
+        return new HandshakeResponse("1.0.0", "EMMA test wasm component ready");
+    }
+
+    public static CapabilityItem[] capabilities()
+    {
+        return
+        [
+            new CapabilityItem(
+                "health",
+                ["paged", "video", "audio"],
+                ["handshake", "capabilities", "search", "invoke"]),
+            new CapabilityItem(
+                "search",
+                ["paged", "video", "audio"],
+                ["search", "invoke"]),
+            new CapabilityItem(
+                "paged-navigation",
+                ["paged"],
+                ["chapters", "page", "pages", "invoke"]),
+            new CapabilityItem(
+                "media-operation",
+                ["paged", "video", "audio"],
+                ["invoke"])
+        ];
+    }
+
+    public static SearchItem[] search(string query, string payloadJson)
+    {
         if (string.IsNullOrWhiteSpace(query))
         {
-            return JsonSerializer.Serialize(Array.Empty<SearchItem>(), TestPluginWasmJsonContext.Default.SearchItemArray);
+            return [];
         }
 
-        var payloadJson = args.Length > 2 ? args[2] : string.Empty;
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchSearchPayload(query) ?? string.Empty;
+        }
 
-        var results = Mangadex.SearchFromPayload(query, payloadJson);
-        var items = results.ToArray();
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
 
-        return JsonSerializer.Serialize(items, TestPluginWasmJsonContext.Default.SearchItemArray);
+        return [.. Mangadex.SearchFromPayload(query, payloadJson)];
     }
 
-    private static string Chapters(string[] args)
+    public static ChapterItem[] chapters(string mediaId, string payloadJson)
     {
-        var mediaId = args.Length > 1 ? args[1] : string.Empty;
         if (string.IsNullOrWhiteSpace(mediaId))
         {
-            return JsonSerializer.Serialize(Array.Empty<ChapterItem>(), TestPluginWasmJsonContext.Default.ChapterItemArray);
+            return [];
         }
 
-        var payloadJson = args.Length > 2 ? args[2] : string.Empty;
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchChaptersPayload(mediaId) ?? string.Empty;
+        }
 
-        var results = Mangadex.GetChaptersFromPayload(mediaId, payloadJson);
-        var chapters = results.ToArray();
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
 
-        return JsonSerializer.Serialize(chapters, TestPluginWasmJsonContext.Default.ChapterItemArray);
+        return [.. Mangadex.GetChaptersFromPayload(mediaId, payloadJson)];
     }
 
-    private static string Page(string[] args)
+    public static PageItem? page(string mediaId, string chapterId, uint pageIndex, string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(mediaId) || string.IsNullOrWhiteSpace(chapterId))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchAtHomePayload(chapterId) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return null;
+        }
+
+        return Mangadex.GetPageFromPayload(chapterId, checked((int)pageIndex), payloadJson);
+    }
+
+    public static PageItem[] pages(string mediaId, string chapterId, uint startIndex, uint count, string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(mediaId) || string.IsNullOrWhiteSpace(chapterId) || count == 0)
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchAtHomePayload(chapterId) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
+
+        return [.. Mangadex.GetPagesFromPayload(chapterId, checked((int)startIndex), checked((int)count), payloadJson)];
+    }
+
+    public static OperationResult invoke(OperationRequest request)
+    {
+        var operation = request.operation?.Trim().ToLowerInvariant() ?? string.Empty;
+        var mediaType = request.mediaType?.Trim().ToLowerInvariant();
+        var payloadJson = request.payloadJson ?? string.Empty;
+
+        try
+        {
+            return operation switch
+            {
+                "search" => BuildOperationJsonResult(
+                    JsonSerializer.Serialize(
+                        search(GetJsonArgString(request.argsJson, "query"), payloadJson),
+                        TestPluginWasmJsonContext.Default.SearchItemArray)),
+                "chapters" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => BuildOperationJsonResult(
+                    JsonSerializer.Serialize(
+                        chapters(request.mediaId ?? GetJsonArgString(request.argsJson, "mediaId"), payloadJson),
+                        TestPluginWasmJsonContext.Default.ChapterItemArray)),
+                "page" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokeSinglePage(request, payloadJson),
+                "pages" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokePages(request, payloadJson),
+                "benchmark" => BuildOperationJsonResult(
+                    Benchmark([Math.Max(1, GetJsonArgInt32(request.argsJson, "iterations") ?? 5000).ToString()])),
+                "benchmark-network" => BuildOperationJsonResult(
+                    BenchmarkNetwork(
+                        [GetJsonArgString(request.argsJson, "query")],
+                        payloadJson)),
+                _ => OperationResult.Error($"unsupported-operation:{operation}")
+            };
+        }
+        catch (Exception ex)
+        {
+            return OperationResult.Error($"failed:{ex.Message}");
+        }
+    }
+
+    private static string SerializePageForCli(string[] args, string stdinPayload)
+    {
+        if (args.Length < 3)
+        {
+            return string.Empty;
+        }
+
+        var mediaId = args[0];
+        var chapterId = args[1];
+        if (!uint.TryParse(args[2], out var pageIndex))
+        {
+            return string.Empty;
+        }
+
+        var result = page(mediaId, chapterId, pageIndex, stdinPayload);
+        if (result is null)
+        {
+            return "null";
+        }
+
+        return JsonSerializer.Serialize(result, TestPluginWasmJsonContext.Default.PageItem);
+    }
+
+    private static string SerializePagesForCli(string[] args, string stdinPayload)
     {
         if (args.Length < 4)
         {
             return string.Empty;
         }
 
-        var chapterId = args[2];
-        if (!int.TryParse(args[3], out var pageIndex) || pageIndex < 0 || string.IsNullOrWhiteSpace(chapterId))
+        var mediaId = args[0];
+        var chapterId = args[1];
+        if (!uint.TryParse(args[2], out var startIndex)
+            || !uint.TryParse(args[3], out var count)
+            || count == 0)
         {
             return string.Empty;
         }
 
-        var payloadJson = args.Length > 4 ? args[4] : string.Empty;
-
-        var page = Mangadex.GetPageFromPayload(chapterId, pageIndex, payloadJson);
-        if (page is null)
-        {
-            return "null";
-        }
-
-        return JsonSerializer.Serialize(
-            page,
-            TestPluginWasmJsonContext.Default.PageItem);
+        var results = pages(mediaId, chapterId, startIndex, count, stdinPayload);
+        return JsonSerializer.Serialize(results, TestPluginWasmJsonContext.Default.PageItemArray);
     }
 
-    private static string Pages(string[] args)
+    private static string SerializeInvokeForCli(string[] args, string stdinPayload)
     {
-        if (args.Length < 5)
+        if (args.Length == 0)
+        {
+            return JsonSerializer.Serialize(
+                OperationResult.Error("invalid-arguments:missing operation"),
+                TestPluginWasmJsonContext.Default.OperationResult);
+        }
+
+        var request = new OperationRequest(
+            args[0],
+            args.Length > 1 ? args[1] : null,
+            args.Length > 2 ? args[2] : null,
+            args.Length > 3 ? args[3] : null,
+            stdinPayload);
+
+        var result = invoke(request);
+        return JsonSerializer.Serialize(result, TestPluginWasmJsonContext.Default.OperationResult);
+    }
+
+    private static (string Operation, string[] Args) NormalizeOperationArgs(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            return (string.Empty, Array.Empty<string>());
+        }
+
+        var maxProbe = Math.Min(args.Length, 5);
+        for (var index = 0; index < maxProbe; index++)
+        {
+            var candidate = args[index].ToLowerInvariant();
+            if (IsKnownOperation(candidate))
+            {
+                return (candidate, args.Length > index + 1 ? args[(index + 1)..] : Array.Empty<string>());
+            }
+        }
+
+        var fallback = args[0].ToLowerInvariant();
+        return (fallback, args.Length > 1 ? args[1..] : Array.Empty<string>());
+    }
+
+    private static bool IsKnownOperation(string operation)
+    {
+        return operation is "handshake"
+            or "capabilities"
+            or "search"
+            or "chapters"
+            or "page"
+            or "pages"
+            or "invoke"
+            or "benchmark"
+            or "benchmark-network";
+    }
+
+    private static OperationResult InvokeSinglePage(OperationRequest request, string payloadJson)
+    {
+        var chapterId = GetJsonArgString(request.argsJson, "chapterId");
+        var pageIndex = GetJsonArgUInt(request.argsJson, "pageIndex") ?? 0;
+        var pageResult = page(request.mediaId ?? GetJsonArgString(request.argsJson, "mediaId"), chapterId, pageIndex, payloadJson);
+        var json = pageResult is null
+            ? "null"
+            : JsonSerializer.Serialize(pageResult, TestPluginWasmJsonContext.Default.PageItem);
+
+        return BuildOperationJsonResult(json);
+    }
+
+    private static OperationResult InvokePages(OperationRequest request, string payloadJson)
+    {
+        var chapterId = GetJsonArgString(request.argsJson, "chapterId");
+        var startIndex = GetJsonArgUInt(request.argsJson, "startIndex") ?? 0;
+        var count = GetJsonArgUInt(request.argsJson, "count") ?? 0;
+        var pagesResult = pages(request.mediaId ?? GetJsonArgString(request.argsJson, "mediaId"), chapterId, startIndex, count, payloadJson);
+        var json = JsonSerializer.Serialize(pagesResult, TestPluginWasmJsonContext.Default.PageItemArray);
+        return BuildOperationJsonResult(json);
+    }
+
+    private static OperationResult BuildOperationJsonResult(string payloadJson)
+    {
+        return new OperationResult(false, null, "application/json", payloadJson);
+    }
+
+    private static string GetJsonArgString(string? argsJson, string key)
+    {
+        if (string.IsNullOrWhiteSpace(argsJson))
         {
             return string.Empty;
         }
 
-        var chapterId = args[2];
-        if (!int.TryParse(args[3], out var startIndex)
-            || startIndex < 0
-            || !int.TryParse(args[4], out var count)
-            || count <= 0
-            || string.IsNullOrWhiteSpace(chapterId))
+        try
         {
-            return string.Empty;
+            using var doc = JsonDocument.Parse(argsJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty(key, out var prop)
+                && prop.ValueKind == JsonValueKind.String)
+            {
+                return prop.GetString() ?? string.Empty;
+            }
+        }
+        catch
+        {
         }
 
-        var payloadJson = args.Length > 5 ? args[5] : string.Empty;
-        var pages = Mangadex.GetPagesFromPayload(chapterId, startIndex, count, payloadJson);
+        return string.Empty;
+    }
+
+    private static uint? GetJsonArgUInt(string? argsJson, string key)
+    {
+        if (string.IsNullOrWhiteSpace(argsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty(key, out var prop))
+            {
+                return null;
+            }
+
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetUInt32(out var numeric))
+            {
+                return numeric;
+            }
+
+            if (prop.ValueKind == JsonValueKind.String
+                && uint.TryParse(prop.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static int? GetJsonArgInt32(string? argsJson, string key)
+    {
+        if (string.IsNullOrWhiteSpace(argsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty(key, out var prop))
+            {
+                return null;
+            }
+
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var numeric))
+            {
+                return numeric;
+            }
+
+            if (prop.ValueKind == JsonValueKind.String
+                && int.TryParse(prop.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static string Benchmark(string[] args)
+    {
+        var iterations = 5000;
+        if (args.Length > 0 && int.TryParse(args[0], out var parsed) && parsed > 0)
+        {
+            iterations = Math.Clamp(parsed, 1, 1_000_000);
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        long checksum = 1469598103934665603;
+        const ulong prime = 1099511628211;
+        var generated = 0;
+
+        for (var i = 0; i < iterations; i++)
+        {
+            var text = $"bench:{i}:{(i * 31) % 97}";
+            foreach (var rune in text.EnumerateRunes())
+            {
+                checksum ^= rune.Value;
+                checksum = (long)((ulong)checksum * prime);
+            }
+
+            generated += text.Length;
+        }
+
+        stopwatch.Stop();
+
+        var result = new BenchmarkResult(
+            iterations,
+            checksum,
+            generated,
+            stopwatch.ElapsedMilliseconds);
 
         return JsonSerializer.Serialize(
-            pages.ToArray(),
-            TestPluginWasmJsonContext.Default.PageItemArray);
+            result,
+            TestPluginWasmJsonContext.Default.BenchmarkResult);
+    }
+
+    private static string BenchmarkNetwork(string[] args, string stdinPayload)
+    {
+        var query = args.Length > 0 ? args[0] : "one piece";
+        var payloadJson = stdinPayload;
+        payloadJson = WasmMangadexClient.ResolvePayloadContent(payloadJson);
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchSearchPayload(query) ?? string.Empty;
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        var payloadBytes = System.Text.Encoding.UTF8.GetByteCount(payloadJson ?? string.Empty);
+        var itemCount = 0;
+
+        if (!string.IsNullOrWhiteSpace(payloadJson))
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            var data = WasmMangadexClient.GetArray(doc.RootElement, "data");
+            itemCount = data?.GetArrayLength() ?? 0;
+        }
+
+        stopwatch.Stop();
+
+        var result = new NetworkBenchmarkResult(
+            query,
+            payloadBytes,
+            itemCount,
+            stopwatch.ElapsedMilliseconds);
+
+        return JsonSerializer.Serialize(
+            result,
+            TestPluginWasmJsonContext.Default.NetworkBenchmarkResult);
     }
 
     private static WasmMangadexClient CreateMangadexClient()
@@ -299,8 +650,82 @@ public static partial class Program
         return new WasmMangadexClient();
     }
 
+    private static string NormalizeJsonPayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = payload.Trim();
+        if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+        {
+            return trimmed;
+        }
+
+        var objectIndex = trimmed.IndexOf('{');
+        var arrayIndex = trimmed.IndexOf('[');
+
+        var start = -1;
+        if (objectIndex >= 0 && arrayIndex >= 0)
+        {
+            start = Math.Min(objectIndex, arrayIndex);
+        }
+        else if (objectIndex >= 0)
+        {
+            start = objectIndex;
+        }
+        else if (arrayIndex >= 0)
+        {
+            start = arrayIndex;
+        }
+
+        return start >= 0 ? trimmed[start..] : string.Empty;
+    }
+
+    private static string ReadInputPayload()
+    {
+        try
+        {
+            return Console.In.ReadToEnd();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static void EmitPayloadDiagnostics(string operation, string payload)
+    {
+        if (!ShouldLogPayloadDiagnostics())
+        {
+            return;
+        }
+
+        var payloadBytes = System.Text.Encoding.UTF8.GetByteCount(payload ?? string.Empty);
+        Console.Error.WriteLine($"[TEMP_TIMING_REMOVE] wasmPayload op={operation} source=stdin bytes={payloadBytes}");
+    }
+
+    private static bool ShouldLogPayloadDiagnostics()
+    {
+        var value = Environment.GetEnvironmentVariable("EMMA_WASM_PAYLOAD_DIAGNOSTICS");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (bool.TryParse(value, out var parsedBool))
+        {
+            return parsedBool;
+        }
+
+        return value.Trim() is "1" or "yes" or "on";
+    }
+
     private sealed class WasmMangadexClient
     {
+        private static readonly HttpClient Http = CreateHttpClient();
+
         public IReadOnlyList<SearchItem> SearchFromPayload(string query, string payloadJson)
         {
             payloadJson = ResolvePayloadContent(payloadJson);
@@ -481,6 +906,60 @@ public static partial class Program
             return pages;
         }
 
+        public string? FetchSearchPayload(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return null;
+            }
+
+            var encodedQuery = Uri.EscapeDataString(query.Trim());
+            return TryFetchPayload($"https://api.mangadex.org/manga?title={encodedQuery}&limit=20&contentRating[]=safe&contentRating[]=suggestive&includes[]=cover_art");
+        }
+
+        public string? FetchChaptersPayload(string mediaId)
+        {
+            if (string.IsNullOrWhiteSpace(mediaId))
+            {
+                return null;
+            }
+
+            var encodedMediaId = Uri.EscapeDataString(mediaId.Trim());
+            return TryFetchPayload($"https://api.mangadex.org/manga/{encodedMediaId}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1");
+        }
+
+        public string? FetchAtHomePayload(string chapterId)
+        {
+            if (string.IsNullOrWhiteSpace(chapterId))
+            {
+                return null;
+            }
+
+            var encodedChapterId = Uri.EscapeDataString(chapterId.Trim());
+            return TryFetchPayload($"https://api.mangadex.org/at-home/server/{encodedChapterId}");
+        }
+
+        private static string? TryFetchPayload(string absoluteUrl)
+        {
+            try
+            {
+                var payload = Http.GetStringAsync(absoluteUrl).GetAwaiter().GetResult();
+                return ResolvePayloadContent(payload);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static HttpClient CreateHttpClient()
+        {
+            var client = new HttpClient();
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "EMMA-TestPlugin/1.0");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+            return client;
+        }
+
         private static bool TryParseAtHomePayload(string payloadJson, out AtHomePayload payload)
         {
             payload = default;
@@ -623,7 +1102,7 @@ public static partial class Program
             return null;
         }
 
-        private static JsonElement? GetArray(JsonElement element, string name)
+        internal static JsonElement? GetArray(JsonElement element, string name)
         {
             if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array)
             {
@@ -664,67 +1143,9 @@ public static partial class Program
             return null;
         }
 
-        private static string ResolvePayloadContent(string payload)
+        internal static string ResolvePayloadContent(string payload)
         {
-            if (string.IsNullOrWhiteSpace(payload))
-            {
-                return string.Empty;
-            }
-
-            var trimmed = payload.Trim();
-            const string inlinePayloadPrefix = "emma-inline-json-b64:";
-            if (trimmed.StartsWith(inlinePayloadPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                var encoded = trimmed[inlinePayloadPrefix.Length..];
-                if (string.IsNullOrWhiteSpace(encoded))
-                {
-                    return string.Empty;
-                }
-
-                try
-                {
-                    var bytes = Convert.FromBase64String(encoded);
-                    return System.Text.Encoding.UTF8.GetString(bytes);
-                }
-                catch
-                {
-                    return string.Empty;
-                }
-            }
-
-            if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
-            {
-                return payload;
-            }
-
-            var candidates = new List<string>();
-            candidates.Add(trimmed);
-
-            var withoutLeadingSlash = trimmed.TrimStart('/');
-            if (!string.Equals(withoutLeadingSlash, trimmed, StringComparison.Ordinal))
-            {
-                candidates.Add(withoutLeadingSlash);
-                candidates.Add(Path.Combine(".", withoutLeadingSlash));
-            }
-
-            if (trimmed.StartsWith("/.hostbridge/", StringComparison.OrdinalIgnoreCase))
-            {
-                var relativeHostBridge = ".hostbridge/" + trimmed["/.hostbridge/".Length..];
-                candidates.Add(relativeHostBridge);
-                candidates.Add(Path.Combine(".", relativeHostBridge));
-            }
-
-            foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                if (!File.Exists(candidate))
-                {
-                    continue;
-                }
-
-                return File.ReadAllText(candidate);
-            }
-
-            return payload;
+            return NormalizeJsonPayload(payload);
         }
 
         private readonly record struct AtHomePayload(
@@ -734,20 +1155,46 @@ public static partial class Program
             IReadOnlyList<string> Files);
     }
 
-    private sealed record HandshakeResponse(string version, string message);
+    public sealed record HandshakeResponse(string version, string message);
 
-    private sealed record SearchItem(string id, string source, string title, string mediaType, string? thumbnailUrl = null, string? description = null);
+    public sealed record SearchItem(string id, string source, string title, string mediaType, string? thumbnailUrl = null, string? description = null);
 
-    private sealed record ChapterItem(string id, int number, string title);
+    public sealed record CapabilityItem(string name, string[] mediaTypes, string[] operations);
 
-    private sealed record PageItem(string id, int index, string contentUri);
+    public sealed record ChapterItem(string id, int number, string title);
+
+    public sealed record PageItem(string id, int index, string contentUri);
+
+    public sealed record OperationRequest(
+        string operation,
+        string? mediaId,
+        string? mediaType,
+        string? argsJson,
+        string? payloadJson);
+
+    public sealed record OperationResult(
+        bool isError,
+        string? error,
+        string contentType,
+        string payloadJson)
+    {
+        public static OperationResult Error(string error)
+            => new(true, error, "application/problem+json", "");
+    }
+
+    private sealed record BenchmarkResult(int iterations, long checksum, int generatedBytes, long elapsedMs);
+    private sealed record NetworkBenchmarkResult(string query, int payloadBytes, int itemCount, long elapsedMs);
 
     [JsonSerializable(typeof(HandshakeResponse))]
     [JsonSerializable(typeof(string[]))]
+    [JsonSerializable(typeof(CapabilityItem[]))]
     [JsonSerializable(typeof(SearchItem[]))]
     [JsonSerializable(typeof(ChapterItem[]))]
     [JsonSerializable(typeof(PageItem))]
     [JsonSerializable(typeof(PageItem[]))]
+    [JsonSerializable(typeof(OperationResult))]
+    [JsonSerializable(typeof(BenchmarkResult))]
+    [JsonSerializable(typeof(NetworkBenchmarkResult))]
     private sealed partial class TestPluginWasmJsonContext : JsonSerializerContext
     {
     }
