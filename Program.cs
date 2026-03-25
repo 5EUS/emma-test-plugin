@@ -143,8 +143,17 @@ public static partial class Program
 
     public static SearchItem[] search(string query, string payloadJson)
     {
+        if (PluginEnvironment.IsDevelopmentMode())
+        {
+            System.Console.WriteLine($"[SEARCH] Called with query='{query}' (empty={string.IsNullOrWhiteSpace(query)})");
+        }
+        
         if (string.IsNullOrWhiteSpace(query))
         {
+            if (PluginEnvironment.IsDevelopmentMode())
+            {
+                System.Console.WriteLine($"[SEARCH] Returning empty results because query is null/whitespace");
+            }
             return [];
         }
 
@@ -159,16 +168,32 @@ public static partial class Program
             payloadJson = Mangadex.FetchSearchPayload(query) ?? string.Empty;
             fetchStopwatch.Stop();
             fetchMs = fetchStopwatch.ElapsedMilliseconds;
+            if (PluginEnvironment.IsDevelopmentMode())
+            {
+                System.Console.WriteLine($"[SEARCH] Fetched payload in {fetchMs}ms, length={payloadJson.Length}");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
+            if (PluginEnvironment.IsDevelopmentMode())
+            {
+                System.Console.WriteLine($"[SEARCH] Payload is empty after fetch, returning []");
+            }
             totalStopwatch.Stop();
             EmitSearchSplitTiming(query, payloadJson, fetchMs, 0, 0, 0, payloadWasFetched, totalStopwatch.ElapsedMilliseconds);
             return [];
         }
 
+        if (PluginEnvironment.IsDevelopmentMode())
+        {
+            System.Console.WriteLine($"[SEARCH] Parsing payload for query='{query}'");
+        }
         var parseMapResult = Mangadex.SearchFromPayloadWithTimings(query, payloadJson);
+        if (PluginEnvironment.IsDevelopmentMode())
+        {
+            System.Console.WriteLine($"[SEARCH] Parse completed, got {parseMapResult.Results.Count} results");
+        }
         totalStopwatch.Stop();
 
         EmitSearchSplitTiming(
@@ -249,6 +274,13 @@ public static partial class Program
         var operation = request.operation?.Trim().ToLowerInvariant() ?? string.Empty;
         var mediaType = request.mediaType?.Trim().ToLowerInvariant();
         var payloadJson = request.payloadJson ?? string.Empty;
+        var searchArgs = PluginSearchQuery.Parse(request.argsJson);
+
+        if (operation == "search" && PluginEnvironment.IsDevelopmentMode())
+        {
+            System.Console.WriteLine($"[DEBUG] Invoke search: argsJson={request.argsJson}");
+            System.Console.WriteLine($"[DEBUG] Parsed searchArgs.Query={searchArgs.Query}");
+        }
 
         try
         {
@@ -256,7 +288,7 @@ public static partial class Program
             {
                 "search" => BuildOperationJsonResult(
                     JsonSerializer.Serialize(
-                        search(PluginJsonArgs.GetString(request.argsJson, "query"), payloadJson),
+                        search(searchArgs.Query, payloadJson),
                         TestPluginWasmJsonContext.Default.SearchItemArray)),
                 "chapters" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => BuildOperationJsonResult(
                     JsonSerializer.Serialize(

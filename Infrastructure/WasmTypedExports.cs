@@ -99,10 +99,11 @@ public static class PluginImpl
 
         var operation = (request.operation ?? string.Empty).Trim().ToLowerInvariant();
         var operationName = request.operation ?? string.Empty;
+        var searchArgs = PluginSearchQuery.Parse(request.argsJson);
         return operation switch
         {
             "search" or "benchmark-network" =>
-                HostBridgeInterop.OperationPayload(operationName, BuildSearchUrl(PluginJsonArgs.GetString(request.argsJson, "query"))),
+                HostBridgeInterop.OperationPayload(operationName, BuildSearchUrl(searchArgs)),
             "chapters" =>
                 HostBridgeInterop.OperationPayload(
                     operationName,
@@ -136,13 +137,105 @@ public static class PluginImpl
 
     private static string? BuildSearchUrl(string query)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        return BuildSearchUrl(new PluginSearchQuery(query ?? string.Empty, [], [], [], null, null, null));
+    }
+
+    private static string? BuildSearchUrl(PluginSearchQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(query.Query))
         {
             return null;
         }
 
-        var encoded = Uri.EscapeDataString(query.Trim());
-        return $"https://api.mangadex.org/manga?title={encoded}&limit=20&contentRating[]=safe&contentRating[]=suggestive&includes[]=cover_art";
+        var parameters = new List<string>
+        {
+            $"title={Uri.EscapeDataString(query.Query.Trim())}",
+            "limit=20",
+            "includes[]=cover_art"
+        };
+
+        var contentRatings = query.GetFilterValues("core.maturity");
+        if (contentRatings.Count == 0)
+        {
+            contentRatings = ["safe", "suggestive"];
+        }
+
+        foreach (var rating in contentRatings)
+        {
+            parameters.Add($"contentRating[]={Uri.EscapeDataString(rating)}");
+        }
+
+        var includedTags = query.GetFilterValues("core.tags");
+        foreach (var tag in includedTags)
+        {
+            parameters.Add($"includedTags[]={Uri.EscapeDataString(tag)}");
+        }
+
+        var excludedTags = query.GetFilterValues("core.tags.exclude");
+        foreach (var tag in excludedTags)
+        {
+            parameters.Add($"excludedTags[]={Uri.EscapeDataString(tag)}");
+        }
+
+        foreach (var author in query.GetFilterValues("core.author"))
+        {
+            parameters.Add($"authors[]={Uri.EscapeDataString(author)}");
+        }
+
+        foreach (var artist in query.GetFilterValues("core.artist"))
+        {
+            parameters.Add($"artists[]={Uri.EscapeDataString(artist)}");
+        }
+
+        foreach (var status in query.GetFilterValues("core.status"))
+        {
+            parameters.Add($"status[]={Uri.EscapeDataString(status)}");
+        }
+
+        foreach (var demographic in query.GetFilterValues("core.demographic"))
+        {
+            parameters.Add($"publicationDemographic[]={Uri.EscapeDataString(demographic)}");
+        }
+
+        var translatedLanguage = query.GetQueryAddition("core.language");
+        if (!string.IsNullOrWhiteSpace(translatedLanguage))
+        {
+            parameters.Add($"availableTranslatedLanguage[]={Uri.EscapeDataString(translatedLanguage.Trim())}");
+        }
+
+        var originalLanguage = query.GetQueryAddition("core.originalLanguage");
+        if (!string.IsNullOrWhiteSpace(originalLanguage))
+        {
+            parameters.Add($"originalLanguage[]={Uri.EscapeDataString(originalLanguage.Trim())}");
+        }
+
+        var year = query.GetQueryAddition("core.year");
+        if (!string.IsNullOrWhiteSpace(year))
+        {
+            parameters.Add($"year={Uri.EscapeDataString(year.Trim())}");
+        }
+
+        var includedTagMode = query.GetQueryAddition("core.tags.mode");
+        if (includedTags.Count > 0 && !string.IsNullOrWhiteSpace(includedTagMode))
+        {
+            var normalizedIncludedMode = includedTagMode.Trim().ToUpperInvariant();
+            if (normalizedIncludedMode is "AND" or "OR")
+            {
+                parameters.Add($"includedTagsMode={Uri.EscapeDataString(normalizedIncludedMode)}");
+            }
+        }
+
+        var excludedTagMode = query.GetQueryAddition("core.tags.exclude.mode");
+        if (excludedTags.Count > 0 && !string.IsNullOrWhiteSpace(excludedTagMode))
+        {
+            var normalizedExcludedMode = excludedTagMode.Trim().ToUpperInvariant();
+            if (normalizedExcludedMode is "AND" or "OR")
+            {
+                parameters.Add($"excludedTagsMode={Uri.EscapeDataString(normalizedExcludedMode)}");
+            }
+        }
+
+        return $"https://api.mangadex.org/manga?{string.Join("&", parameters)}";
     }
 
     private static string? BuildChaptersUrl(string mediaId)

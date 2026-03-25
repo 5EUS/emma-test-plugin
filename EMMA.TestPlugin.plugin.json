@@ -17,6 +17,164 @@
     "width": 256,
     "height": 384
   },
+  "searchExperience": {
+    "capabilities": [
+      "landing-v1",
+      "filters-v1",
+      "query-additions-v1"
+    ],
+    "landing": {
+      "template": "media-search",
+      "title": "MangaDex Search",
+      "subtitle": "Discover manga by title, tags, author, demographic, and maturity",
+      "sections": [
+        {
+          "id": "hero",
+          "type": "hero",
+          "title": "Search MangaDex",
+          "description": "Use query and optional filters. Works with simple query too.",
+          "mediaTypes": ["paged"],
+          "actions": [
+            {
+              "id": "quick-naruto",
+              "label": "Naruto",
+              "type": "set-query",
+              "value": "naruto"
+            },
+            {
+              "id": "quick-one-piece",
+              "label": "One Piece",
+              "type": "set-query",
+              "value": "one piece"
+            }
+          ]
+        }
+      ]
+    },
+    "filters": [
+      {
+        "id": "core.tags",
+        "label": "Include Tags",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "description": "MangaDex tag UUIDs to include."
+      },
+      {
+        "id": "core.tags.exclude",
+        "label": "Exclude Tags",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "description": "MangaDex tag UUIDs to exclude."
+      },
+      {
+        "id": "core.author",
+        "label": "Author",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "description": "MangaDex author UUIDs."
+      },
+      {
+        "id": "core.artist",
+        "label": "Artist",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "description": "MangaDex artist UUIDs."
+      },
+      {
+        "id": "core.demographic",
+        "label": "Demographic",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "options": [
+          { "value": "shounen", "label": "Shounen" },
+          { "value": "shoujo", "label": "Shoujo" },
+          { "value": "josei", "label": "Josei" },
+          { "value": "seinen", "label": "Seinen" }
+        ]
+      },
+      {
+        "id": "core.status",
+        "label": "Status",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "options": [
+          { "value": "ongoing", "label": "Ongoing" },
+          { "value": "completed", "label": "Completed" },
+          { "value": "hiatus", "label": "Hiatus" },
+          { "value": "cancelled", "label": "Cancelled" }
+        ]
+      },
+      {
+        "id": "core.maturity",
+        "label": "Maturity",
+        "type": "multi",
+        "appliesToMediaTypes": ["paged"],
+        "defaultValues": ["safe", "suggestive"],
+        "options": [
+          { "value": "safe", "label": "Safe", "isDefault": true },
+          { "value": "suggestive", "label": "Suggestive", "isDefault": true },
+          { "value": "erotica", "label": "Erotica" },
+          { "value": "pornographic", "label": "Pornographic" }
+        ]
+      }
+    ],
+    "query": {
+      "allowFreeText": true,
+      "minLength": 1,
+      "maxLength": 200,
+      "additions": [
+        {
+          "id": "core.language",
+          "label": "Translated Language",
+          "type": "single",
+          "defaultValue": "en",
+          "options": [
+            { "value": "en", "label": "English", "isDefault": true },
+            { "value": "ja", "label": "Japanese" },
+            { "value": "ko", "label": "Korean" },
+            { "value": "zh", "label": "Chinese" }
+          ],
+          "appliesToMediaTypes": ["paged"]
+        },
+        {
+          "id": "core.originalLanguage",
+          "label": "Original Language",
+          "type": "single",
+          "placeholder": "e.g. ja",
+          "appliesToMediaTypes": ["paged"]
+        },
+        {
+          "id": "core.year",
+          "label": "Year",
+          "type": "number",
+          "placeholder": "e.g. 2020",
+          "appliesToMediaTypes": ["paged"]
+        },
+        {
+          "id": "core.tags.mode",
+          "label": "Included Tag Mode",
+          "type": "single",
+          "defaultValue": "and",
+          "options": [
+            { "value": "and", "label": "AND", "isDefault": true },
+            { "value": "or", "label": "OR" }
+          ],
+          "appliesToMediaTypes": ["paged"]
+        },
+        {
+          "id": "core.tags.exclude.mode",
+          "label": "Excluded Tag Mode",
+          "type": "single",
+          "defaultValue": "or",
+          "options": [
+            { "value": "or", "label": "OR", "isDefault": true },
+            { "value": "and", "label": "AND" }
+          ],
+          "appliesToMediaTypes": ["paged"]
+        }
+      ]
+    }
+  },
   "capabilities": {
     "network": [
       "https"
