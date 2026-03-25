@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
+using EMMA.Plugin.Common;
 using EMMA.Contracts.Plugins;
 using Microsoft.Extensions.Logging;
 
@@ -36,7 +37,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var data = GetArray(doc.RootElement, "data");
+        var data = PluginJsonElement.GetArray(doc.RootElement, "data");
         if (data is null)
         {
             return [];
@@ -45,7 +46,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         var results = new List<MediaSummary>();
         foreach (var item in data.Value.EnumerateArray())
         {
-            var id = GetString(item, "id");
+            var id = PluginJsonElement.GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
@@ -85,7 +86,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var data = GetArray(doc.RootElement, "data");
+        var data = PluginJsonElement.GetArray(doc.RootElement, "data");
         if (data is null)
         {
             return [];
@@ -95,21 +96,21 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         var index = 0;
         foreach (var item in data.Value.EnumerateArray())
         {
-            var id = GetString(item, "id");
+            var id = PluginJsonElement.GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
             }
 
-            var attributes = GetObject(item, "attributes");
-            var pages = attributes is null ? null : GetInt32(attributes.Value, "pages");
+            var attributes = PluginJsonElement.GetObject(item, "attributes");
+            var pages = attributes is null ? null : PluginJsonElement.GetInt32(attributes.Value, "pages");
             if (pages is not null && pages <= 0)
             {
                 continue;
             }
 
-            var title = attributes is null ? null : GetString(attributes.Value, "title");
-            var chapterText = attributes is null ? null : GetString(attributes.Value, "chapter");
+            var title = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "title");
+            var chapterText = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "chapter");
             var number = index + 1;
             if (!string.IsNullOrWhiteSpace(chapterText) && int.TryParse(chapterText, out var parsed))
             {
@@ -196,19 +197,19 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
         using var doc = JsonDocument.Parse(payloadJson);
 
-        var baseUrl = GetString(doc.RootElement, "baseUrl");
-        var chapter = GetObject(doc.RootElement, "chapter");
+        var baseUrl = PluginJsonElement.GetString(doc.RootElement, "baseUrl");
+        var chapter = PluginJsonElement.GetObject(doc.RootElement, "chapter");
         if (string.IsNullOrWhiteSpace(baseUrl) || chapter is null)
         {
             return [];
         }
 
-        var hash = GetString(chapter.Value, "hash");
-        var files = GetArray(chapter.Value, "data");
+        var hash = PluginJsonElement.GetString(chapter.Value, "hash");
+        var files = PluginJsonElement.GetArray(chapter.Value, "data");
         var dataPathSegment = "data";
         if (files is null || files.Value.GetArrayLength() == 0)
         {
-            files = GetArray(chapter.Value, "dataSaver");
+            files = PluginJsonElement.GetArray(chapter.Value, "dataSaver");
             dataPathSegment = "data-saver";
         }
 
@@ -336,37 +337,37 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
     private static string? GetTitle(JsonElement item)
     {
-        var attributes = GetObject(item, "attributes");
+        var attributes = PluginJsonElement.GetObject(item, "attributes");
         if (attributes is null)
         {
             return null;
         }
 
-        var titleMap = GetObject(attributes.Value, "title");
-        return PickMapString(titleMap);
+        var titleMap = PluginJsonElement.GetObject(attributes.Value, "title");
+        return PluginJsonElement.PickMapString(titleMap);
     }
 
     private static string? GetDescription(JsonElement item)
     {
-        var attributes = GetObject(item, "attributes");
+        var attributes = PluginJsonElement.GetObject(item, "attributes");
         if (attributes is null)
         {
             return null;
         }
 
-        var descriptionMap = GetObject(attributes.Value, "description");
-        return PickMapString(descriptionMap);
+        var descriptionMap = PluginJsonElement.GetObject(attributes.Value, "description");
+        return PluginJsonElement.PickMapString(descriptionMap);
     }
 
     private static string? BuildThumbnailUrl(JsonElement item)
     {
-        var mangaId = GetString(item, "id");
+        var mangaId = PluginJsonElement.GetString(item, "id");
         if (string.IsNullOrWhiteSpace(mangaId))
         {
             return null;
         }
 
-        var relationships = GetArray(item, "relationships");
+        var relationships = PluginJsonElement.GetArray(item, "relationships");
         if (relationships is null)
         {
             return null;
@@ -374,19 +375,19 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
         foreach (var relation in relationships.Value.EnumerateArray())
         {
-            var relationType = GetString(relation, "type");
+            var relationType = PluginJsonElement.GetString(relation, "type");
             if (!string.Equals(relationType, "cover_art", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var attributes = GetObject(relation, "attributes");
+            var attributes = PluginJsonElement.GetObject(relation, "attributes");
             if (attributes is null)
             {
                 continue;
             }
 
-            var fileName = GetString(attributes.Value, "fileName");
+            var fileName = PluginJsonElement.GetString(attributes.Value, "fileName");
             if (string.IsNullOrWhiteSpace(fileName))
             {
                 continue;
@@ -398,85 +399,4 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         return null;
     }
 
-    private static string? PickMapString(JsonElement? map)
-    {
-        if (map is null || map.Value.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        if (map.Value.TryGetProperty("en", out var en) && en.ValueKind == JsonValueKind.String)
-        {
-            var value = en.GetString();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        foreach (var property in map.Value.EnumerateObject())
-        {
-            if (property.Value.ValueKind == JsonValueKind.String)
-            {
-                var value = property.Value.GetString();
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    return value;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static JsonElement? GetObject(JsonElement element, string name)
-    {
-        if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object)
-        {
-            return value;
-        }
-
-        return null;
-    }
-
-    private static JsonElement? GetArray(JsonElement element, string name)
-    {
-        if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array)
-        {
-            return value;
-        }
-
-        return null;
-    }
-
-    private static string? GetString(JsonElement element, string name)
-    {
-        if (element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
-        {
-            return value.GetString();
-        }
-
-        return null;
-    }
-
-    private static int? GetInt32(JsonElement element, string name)
-    {
-        if (!element.TryGetProperty(name, out var value))
-        {
-            return null;
-        }
-
-        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var numeric))
-        {
-            return numeric;
-        }
-
-        if (value.ValueKind == JsonValueKind.String
-            && int.TryParse(value.GetString(), out var parsed))
-        {
-            return parsed;
-        }
-
-        return null;
-    }
 }

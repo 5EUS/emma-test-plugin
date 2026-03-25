@@ -24,6 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">
+    <ProjectReference Include="..\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" />
     <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
     <PackageReference Include="runtime.wasi-wasm.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-alpha.1.25162.1" />
     <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-alpha.1.25162.1" Condition="$([MSBuild]::IsOSPlatform('Linux')) and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'" />
@@ -34,6 +35,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'AspNet'">
+    <ProjectReference Include="..\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" />
     <ProjectReference Include="..\EMMA.Contracts\EMMA.Contracts.csproj" />
     <ProjectReference Include="..\EMMA.Plugin.AspNetCore\EMMA.Plugin.AspNetCore.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

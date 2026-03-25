@@ -1,5 +1,6 @@
 #if PLUGIN_TRANSPORT_WASM
 using System.Text.Json;
+using EMMA.Plugin.Common;
 using LibraryWorld;
 using LibraryWorld.wit.exports.emma.plugin;
 using LibraryWorld.wit.imports.emma.plugin;
@@ -74,7 +75,7 @@ public static class PluginImpl
     {
         var payload = ResolveInvokePayload(request);
 
-        var result = EMMA.TestPlugin.Program.invoke(new EMMA.TestPlugin.Program.OperationRequest(
+        var result = EMMA.TestPlugin.Program.invoke(new OperationRequest(
             request.operation,
             request.mediaId,
             request.mediaType,
@@ -101,19 +102,19 @@ public static class PluginImpl
         return operation switch
         {
             "search" or "benchmark-network" =>
-                HostBridgeInterop.OperationPayload(operationName, BuildSearchUrl(GetJsonArgString(request.argsJson, "query") ?? string.Empty)),
+                HostBridgeInterop.OperationPayload(operationName, BuildSearchUrl(PluginJsonArgs.GetString(request.argsJson, "query"))),
             "chapters" =>
                 HostBridgeInterop.OperationPayload(
                     operationName,
-                    BuildChaptersUrl(request.mediaId ?? GetJsonArgString(request.argsJson, "mediaId") ?? string.Empty)),
+                    BuildChaptersUrl(request.mediaId ?? PluginJsonArgs.GetString(request.argsJson, "mediaId"))),
             "page" =>
                 HostBridgeInterop.OperationPayload(
                     operationName,
-                    BuildAtHomeUrl(GetJsonArgString(request.argsJson, "chapterId") ?? string.Empty)),
+                    BuildAtHomeUrl(PluginJsonArgs.GetString(request.argsJson, "chapterId"))),
             "pages" =>
                 HostBridgeInterop.OperationPayload(
                     operationName,
-                    BuildAtHomeUrl(GetJsonArgString(request.argsJson, "chapterId") ?? string.Empty)),
+                    BuildAtHomeUrl(PluginJsonArgs.GetString(request.argsJson, "chapterId"))),
             _ => HostBridgeInterop.OperationPayload(operationName, request.argsJson)
         };
     }
@@ -164,35 +165,6 @@ public static class PluginImpl
 
         var encoded = Uri.EscapeDataString(chapterId.Trim());
         return $"https://api.mangadex.org/at-home/server/{encoded}";
-    }
-
-    private static string? GetJsonArgString(string? argsJson, string key)
-    {
-        if (string.IsNullOrWhiteSpace(argsJson))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(argsJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object
-                || !doc.RootElement.TryGetProperty(key, out var prop))
-            {
-                return null;
-            }
-
-            return prop.ValueKind switch
-            {
-                JsonValueKind.String => prop.GetString(),
-                JsonValueKind.Number => prop.GetRawText(),
-                _ => null
-            };
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static WitException<IPlugin.OperationError> CreateOperationError(string? error)
