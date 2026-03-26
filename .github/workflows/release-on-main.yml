@@ -32,6 +32,15 @@ jobs:
       - name: Install packaging deps
         run: sudo apt-get update && sudo apt-get install -y zip
 
+      - name: Install WASI SDK
+        run: |
+          WASI_SDK_VERSION="22.0"
+          WASI_SDK_DIR="$RUNNER_TEMP/wasi-sdk-$WASI_SDK_VERSION"
+          curl -fsSL "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$WASI_SDK_VERSION/wasi-sdk-$WASI_SDK_VERSION-x86_64-linux.tar.gz" -o "$RUNNER_TEMP/wasi-sdk.tar.gz"
+          mkdir -p "$RUNNER_TEMP"
+          tar -xzf "$RUNNER_TEMP/wasi-sdk.tar.gz" -C "$RUNNER_TEMP"
+          echo "WASI_SDK_PATH=$WASI_SDK_DIR" >> "$GITHUB_ENV"
+
       - name: Bump plugin version
         id: bump
         run: |
@@ -48,32 +57,57 @@ jobs:
           git commit -m "chore(release): bump plugin version to ${{ steps.bump.outputs.next_version }} [skip ci]"
           git push origin HEAD:main
 
+      - name: Verify manifest signing key
+        env:
+          EMMA_HMAC_KEY_BASE64: ${{ secrets.EMMA_HMAC_KEY_BASE64 }}
+        run: |
+          if [[ -z "${EMMA_HMAC_KEY_BASE64}" ]]; then
+            echo "Missing required secret: EMMA_HMAC_KEY_BASE64" >&2
+            exit 1
+          fi
+
       - name: Build release package
         env:
           EMMA_SDK_VERSION: ${{ vars.EMMA_SDK_VERSION || '0.1.0' }}
           ASPNET_NO_RESTORE: "1"
-          PACKAGE_TARGET_RID: "linux-x64"
+          ASPNET_TARGET_RID: "linux-x64"
+          WASM_TARGET: "wasm"
+          EMMA_REQUIRE_SIGNED_PLUGINS: "1"
+          EMMA_HMAC_KEY_BASE64: ${{ secrets.EMMA_HMAC_KEY_BASE64 }}
         run: |
           chmod +x scripts/plugin-validate-manifest.sh
+          chmod +x scripts/build-pack-plugin.sh
           chmod +x scripts/build-pack-plugin-aspnet.sh
           dotnet nuget locals all --clear
           dotnet restore EMMA.TestPlugin.csproj \
             --no-cache \
             --force-evaluate \
-            --runtime "$PACKAGE_TARGET_RID" \
+            --runtime "$ASPNET_TARGET_RID" \
             --source https://api.nuget.org/v3/index.json \
             --source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json \
             -p:PluginTransport=AspNet \
             -p:EmmaSdkVersion="$EMMA_SDK_VERSION"
-          TARGETS="$PACKAGE_TARGET_RID" EMMA_SDK_VERSION="$EMMA_SDK_VERSION" scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
+
+          TARGETS="$ASPNET_TARGET_RID" \
+          EMMA_SDK_VERSION="$EMMA_SDK_VERSION" \
+          scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
+
+          TARGETS="$WASM_TARGET" \
+          EMMA_SDK_VERSION="$EMMA_SDK_VERSION" \
+          WASI_SDK_PATH="$WASI_SDK_PATH" \
+          scripts/build-pack-plugin.sh EMMA.TestPlugin.plugin.json
 
       - name: Compute sha256
         id: sha
         run: |
-          ASSET_PATH="artifacts/pack/emma.plugin.test_${{ steps.bump.outputs.next_version }}_linux-x64.zip"
-          SHA256=$(sha256sum "$ASSET_PATH" | awk '{print $1}')
-          echo "asset_path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
-          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          ASPNET_ASSET_PATH="artifacts/pack/emma.plugin.test_${{ steps.bump.outputs.next_version }}_linux-x64.zip"
+          WASM_ASSET_PATH="artifacts/pack/emma.plugin.test_${{ steps.bump.outputs.next_version }}_wasm.zip"
+          ASPNET_SHA256=$(sha256sum "$ASPNET_ASSET_PATH" | awk '{print $1}')
+          WASM_SHA256=$(sha256sum "$WASM_ASSET_PATH" | awk '{print $1}')
+          echo "aspnet_asset_path=$ASPNET_ASSET_PATH" >> "$GITHUB_OUTPUT"
+          echo "wasm_asset_path=$WASM_ASSET_PATH" >> "$GITHUB_OUTPUT"
+          echo "aspnet_sha256=$ASPNET_SHA256" >> "$GITHUB_OUTPUT"
+          echo "wasm_sha256=$WASM_SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Create Git tag
         run: |
@@ -90,6 +124,8 @@ jobs:
             Automated release for EMMA Test Plugin.
 
             Artifact SHA-256:
-            - `${{ steps.sha.outputs.sha256 }}`
+            - `emma.plugin.test_${{ steps.bump.outputs.next_version }}_linux-x64.zip`: `${{ steps.sha.outputs.aspnet_sha256 }}`
+            - `emma.plugin.test_${{ steps.bump.outputs.next_version }}_wasm.zip`: `${{ steps.sha.outputs.wasm_sha256 }}`
           files: |
-            ${{ steps.sha.outputs.asset_path }}
+            ${{ steps.sha.outputs.aspnet_asset_path }}
+            ${{ steps.sha.outputs.wasm_asset_path }}
