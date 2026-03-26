@@ -1,7 +1,7 @@
 {
   "id": "emma.plugin.test",
   "name": "EMMA Test Plugin",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Local test plugin that provides paged and video content via gRPC.",
   "author": "projectemma",
   "protocol": "grpc",
