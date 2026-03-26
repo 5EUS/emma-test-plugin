@@ -10,6 +10,7 @@ PACK_DIR="$OUT_DIR/pack"
 ASPNET_BUILD_CONFIGURATION="${ASPNET_BUILD_CONFIGURATION:-Release}"
 ASPNET_PROJECT_PATH="${ASPNET_PROJECT_PATH:-}"
 EMMA_SDK_VERSION="${EMMA_SDK_VERSION:-}"
+ASPNET_NO_RESTORE="${ASPNET_NO_RESTORE:-0}"
 HOST_OS="$(uname -s)"
 DEFAULT_TARGETS="osx-arm64"
 if [[ "$HOST_OS" == "Linux" ]]; then
@@ -170,6 +171,10 @@ for TARGET in $TARGETS; do
 
   if [[ -n "$EMMA_SDK_VERSION" ]]; then
     publish_args+=("-p:EmmaSdkVersion=$EMMA_SDK_VERSION")
+  fi
+
+  if [[ "$ASPNET_NO_RESTORE" == "1" ]]; then
+    publish_args+=("--no-restore")
   fi
 
   dotnet publish "$PROJECT_PATH" \
