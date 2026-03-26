@@ -1,7 +1,7 @@
 {
   "id": "emma.plugin.test",
   "name": "EMMA Test Plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local test plugin that provides paged and video content via gRPC.",
   "author": "EMMA",
   "protocol": "grpc",
@@ -33,7 +33,9 @@
           "type": "hero",
           "title": "Search MangaDex",
           "description": "Use query and optional filters. Works with simple query too.",
-          "mediaTypes": ["paged"],
+          "mediaTypes": [
+            "paged"
+          ],
           "actions": [
             {
               "id": "quick-naruto",
@@ -56,65 +58,120 @@
         "id": "core.tags",
         "label": "Include Tags",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "description": "MangaDex tag UUIDs to include."
       },
       {
         "id": "core.tags.exclude",
         "label": "Exclude Tags",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "description": "MangaDex tag UUIDs to exclude."
       },
       {
         "id": "core.author",
         "label": "Author",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "description": "MangaDex author UUIDs."
       },
       {
         "id": "core.artist",
         "label": "Artist",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "description": "MangaDex artist UUIDs."
       },
       {
         "id": "core.demographic",
         "label": "Demographic",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "options": [
-          { "value": "shounen", "label": "Shounen" },
-          { "value": "shoujo", "label": "Shoujo" },
-          { "value": "josei", "label": "Josei" },
-          { "value": "seinen", "label": "Seinen" }
+          {
+            "value": "shounen",
+            "label": "Shounen"
+          },
+          {
+            "value": "shoujo",
+            "label": "Shoujo"
+          },
+          {
+            "value": "josei",
+            "label": "Josei"
+          },
+          {
+            "value": "seinen",
+            "label": "Seinen"
+          }
         ]
       },
       {
         "id": "core.status",
         "label": "Status",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
         "options": [
-          { "value": "ongoing", "label": "Ongoing" },
-          { "value": "completed", "label": "Completed" },
-          { "value": "hiatus", "label": "Hiatus" },
-          { "value": "cancelled", "label": "Cancelled" }
+          {
+            "value": "ongoing",
+            "label": "Ongoing"
+          },
+          {
+            "value": "completed",
+            "label": "Completed"
+          },
+          {
+            "value": "hiatus",
+            "label": "Hiatus"
+          },
+          {
+            "value": "cancelled",
+            "label": "Cancelled"
+          }
         ]
       },
       {
         "id": "core.maturity",
         "label": "Maturity",
         "type": "multi",
-        "appliesToMediaTypes": ["paged"],
-        "defaultValues": ["safe", "suggestive"],
+        "appliesToMediaTypes": [
+          "paged"
+        ],
+        "defaultValues": [
+          "safe",
+          "suggestive"
+        ],
         "options": [
-          { "value": "safe", "label": "Safe", "isDefault": true },
-          { "value": "suggestive", "label": "Suggestive", "isDefault": true },
-          { "value": "erotica", "label": "Erotica" },
-          { "value": "pornographic", "label": "Pornographic" }
+          {
+            "value": "safe",
+            "label": "Safe",
+            "isDefault": true
+          },
+          {
+            "value": "suggestive",
+            "label": "Suggestive",
+            "isDefault": true
+          },
+          {
+            "value": "erotica",
+            "label": "Erotica"
+          },
+          {
+            "value": "pornographic",
+            "label": "Pornographic"
+          }
         ]
       }
     ],
@@ -129,26 +186,45 @@
           "type": "single",
           "defaultValue": "en",
           "options": [
-            { "value": "en", "label": "English", "isDefault": true },
-            { "value": "ja", "label": "Japanese" },
-            { "value": "ko", "label": "Korean" },
-            { "value": "zh", "label": "Chinese" }
+            {
+              "value": "en",
+              "label": "English",
+              "isDefault": true
+            },
+            {
+              "value": "ja",
+              "label": "Japanese"
+            },
+            {
+              "value": "ko",
+              "label": "Korean"
+            },
+            {
+              "value": "zh",
+              "label": "Chinese"
+            }
           ],
-          "appliesToMediaTypes": ["paged"]
+          "appliesToMediaTypes": [
+            "paged"
+          ]
         },
         {
           "id": "core.originalLanguage",
           "label": "Original Language",
           "type": "single",
           "placeholder": "e.g. ja",
-          "appliesToMediaTypes": ["paged"]
+          "appliesToMediaTypes": [
+            "paged"
+          ]
         },
         {
           "id": "core.year",
           "label": "Year",
           "type": "number",
           "placeholder": "e.g. 2020",
-          "appliesToMediaTypes": ["paged"]
+          "appliesToMediaTypes": [
+            "paged"
+          ]
         },
         {
           "id": "core.tags.mode",
@@ -156,10 +232,19 @@
           "type": "single",
           "defaultValue": "and",
           "options": [
-            { "value": "and", "label": "AND", "isDefault": true },
-            { "value": "or", "label": "OR" }
+            {
+              "value": "and",
+              "label": "AND",
+              "isDefault": true
+            },
+            {
+              "value": "or",
+              "label": "OR"
+            }
           ],
-          "appliesToMediaTypes": ["paged"]
+          "appliesToMediaTypes": [
+            "paged"
+          ]
         },
         {
           "id": "core.tags.exclude.mode",
@@ -167,10 +252,19 @@
           "type": "single",
           "defaultValue": "or",
           "options": [
-            { "value": "or", "label": "OR", "isDefault": true },
-            { "value": "and", "label": "AND" }
+            {
+              "value": "or",
+              "label": "OR",
+              "isDefault": true
+            },
+            {
+              "value": "and",
+              "label": "AND"
+            }
           ],
-          "appliesToMediaTypes": ["paged"]
+          "appliesToMediaTypes": [
+            "paged"
+          ]
         }
       ]
     }
