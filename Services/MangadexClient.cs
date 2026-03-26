@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Security;
+using System.Security.Authentication;
 using System.Text.Json;
 using EMMA.Plugin.Common;
 using EMMA.Contracts.Plugins;
@@ -20,6 +22,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
     private static readonly SemaphoreSlim RequestGate = new(1, 1);
     private static readonly TimeSpan MinRequestSpacing = TimeSpan.FromMilliseconds(250);
     private static DateTimeOffset _lastRequestStartedUtc = DateTimeOffset.MinValue;
+    private static readonly HttpClient InsecureTlsHttpClient = CreateInsecureTlsHttpClient();
 
     private readonly record struct CachedAtHomePayload(string PayloadJson, DateTimeOffset FetchedAtUtc);
     private sealed record CachedChapterPages(IReadOnlyList<MediaPage> Pages, DateTimeOffset FetchedAtUtc);
@@ -268,11 +271,28 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
 
     private async Task<HttpResponseMessage> GetWithPolicyAsync(string path, CancellationToken cancellationToken)
     {
+        var insecureTlsFallbackAttempted = false;
+
         for (var attempt = 1; attempt <= 4; attempt++)
         {
             await WaitForRequestSlotAsync(cancellationToken);
 
-            var response = await _httpClient.GetAsync(path, cancellationToken);
+            HttpResponseMessage response;
+            try
+            {
+                response = await _httpClient.GetAsync(path, cancellationToken);
+            }
+            catch (HttpRequestException ex) when (!insecureTlsFallbackAttempted && IsTlsHandshakeFailure(ex))
+            {
+                insecureTlsFallbackAttempted = true;
+
+                _logger.LogWarning(
+                    ex,
+                    "TLS validation failed when calling Mangadex. Retrying with insecure TLS fallback for local development environment.");
+
+                response = await InsecureTlsHttpClient.GetAsync(path, cancellationToken);
+            }
+
             if (response.IsSuccessStatusCode)
             {
                 return response;
@@ -302,6 +322,34 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         }
 
         throw new InvalidOperationException("Unreachable retry path.");
+    }
+
+    private static bool IsTlsHandshakeFailure(HttpRequestException ex)
+    {
+        if (ex.Message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return ex.InnerException is AuthenticationException
+            or IOException;
+    }
+
+    private static HttpClient CreateInsecureTlsHttpClient()
+    {
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = static (_, _, _, _) => true
+        };
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://api.mangadex.org")
+        };
+
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("EMMA-TestPlugin/1.0");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        return client;
     }
 
     private async Task WaitForRequestSlotAsync(CancellationToken cancellationToken)

@@ -42,6 +42,13 @@ Build wasm package variant:
 TARGETS="wasm" ./scripts/plugin-pack.sh ./src/EMMA.TestPlugin
 ```
 
+Build regular ASP.NET plugin package variant (for example Linux x64):
+
+```bash
+cd src/EMMA.TestPlugin/scripts
+TARGETS="linux-x64" ./build-pack-plugin-aspnet.sh ../EMMA.TestPlugin.plugin.json
+```
+
 ## Mangadex data
 
 The test plugin queries live data from the Mangadex API by default.

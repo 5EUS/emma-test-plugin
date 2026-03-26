@@ -18,6 +18,7 @@ WASM_BUILD_RID="${WASM_BUILD_RID:-wasi-wasm}"
 WASM_BUILD_OUTPUT="${WASM_BUILD_OUTPUT:-$OUT_DIR/wasm-publish}"
 WASM_OUTPUT_NAME="${WASM_OUTPUT_NAME:-}"
 WASM_BUILD_TOOLCHAIN="${WASM_BUILD_TOOLCHAIN:-componentize}"
+WASM_NATIVE_CODEGEN="${WASM_NATIVE_CODEGEN:-none}"
 SKIP_WASM_BUILD="${SKIP_WASM_BUILD:-0}"
 CWASM_WASMTIME_TARGET="${CWASM_WASMTIME_TARGET:-}"
 CWASM_WASMTIME_BIN="${CWASM_WASMTIME_BIN:-wasmtime}"
@@ -156,6 +157,7 @@ build_wasm_component() {
     -c "$WASM_BUILD_CONFIGURATION" \
     -r "$WASM_BUILD_RID" \
     -p:WASI_SDK_PATH="$WASI_SDK_PATH" \
+    -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
     -p:PluginTransport=Wasm
 
   local expected_name
@@ -225,6 +227,13 @@ PY
 
 if [[ ! -f "$MANIFEST_PATH" ]]; then
   echo "Manifest not found: $MANIFEST_PATH" >&2
+  exit 1
+fi
+
+if [[ "${MANIFEST_PATH##*.}" == "csproj" ]]; then
+  echo "Expected a plugin manifest JSON, but got a .csproj: $MANIFEST_PATH" >&2
+  echo "Use: ./build-pack-plugin.sh /path/to/*.plugin.json" >&2
+  echo "For regular ASP.NET packaging, use: ./build-pack-plugin-aspnet.sh /path/to/*.plugin.json" >&2
   exit 1
 fi
 
@@ -310,6 +319,7 @@ for TARGET in $TARGETS; do
     fi
   else
     echo "Unsupported target for packaging: $TARGET (supported: wasm, cwasm)" >&2
+    echo "For ASP.NET targets (for example linux-x64), use build-pack-plugin-aspnet.sh." >&2
     exit 1
   fi
 
