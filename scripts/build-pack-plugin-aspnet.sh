@@ -9,6 +9,7 @@ OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"
 ASPNET_BUILD_CONFIGURATION="${ASPNET_BUILD_CONFIGURATION:-Release}"
 ASPNET_PROJECT_PATH="${ASPNET_PROJECT_PATH:-}"
+EMMA_SDK_VERSION="${EMMA_SDK_VERSION:-}"
 HOST_OS="$(uname -s)"
 DEFAULT_TARGETS="osx-arm64"
 if [[ "$HOST_OS" == "Linux" ]]; then
@@ -158,13 +159,21 @@ for TARGET in $TARGETS; do
     exit 1
   fi
 
-  dotnet publish "$PROJECT_PATH" \
-    -c "$ASPNET_BUILD_CONFIGURATION" \
-    -r "$TARGET" \
-    --self-contained true \
-    -p:UseAppHost=true \
-    -p:PluginTransport=AspNet \
+  publish_args=(
+    -c "$ASPNET_BUILD_CONFIGURATION"
+    -r "$TARGET"
+    --self-contained true
+    -p:UseAppHost=true
+    -p:PluginTransport=AspNet
     -o "$PUBLISH_DIR"
+  )
+
+  if [[ -n "$EMMA_SDK_VERSION" ]]; then
+    publish_args+=("-p:EmmaSdkVersion=$EMMA_SDK_VERSION")
+  fi
+
+  dotnet publish "$PROJECT_PATH" \
+    "${publish_args[@]}"
 
   APP_RUNTIME_CONFIG=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -name "*.runtimeconfig.json" | head -n 1)
   if [[ -z "$APP_RUNTIME_CONFIG" ]]; then

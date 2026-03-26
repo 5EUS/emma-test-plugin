@@ -49,10 +49,12 @@ jobs:
           git push origin HEAD:main
 
       - name: Build release package
+        env:
+          EMMA_SDK_VERSION: ${{ vars.EMMA_SDK_VERSION || '0.1.0' }}
         run: |
           chmod +x scripts/plugin-validate-manifest.sh
           chmod +x scripts/build-pack-plugin-aspnet.sh
-          TARGETS="linux-x64" scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
+          TARGETS="linux-x64" EMMA_SDK_VERSION="$EMMA_SDK_VERSION" scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
 
       - name: Compute sha256
         id: sha

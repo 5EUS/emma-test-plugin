@@ -3,7 +3,7 @@
   "name": "EMMA Test Plugin",
   "version": "0.1.1",
   "description": "Local test plugin that provides paged and video content via gRPC.",
-  "author": "EMMA",
+  "author": "projectemma",
   "protocol": "grpc",
   "runtime": {
     "minHostVersion": "1.0.0"
