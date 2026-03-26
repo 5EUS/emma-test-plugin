@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-REPO_ROOT=$(cd "$PLUGIN_DIR/../.." && pwd)
+REPO_ROOT="$PLUGIN_DIR"
 
 DOCKER_IMAGE=${DOCKER_IMAGE:-mcr.microsoft.com/dotnet/sdk:10.0-preview}
 DOCKER_PLATFORM=${DOCKER_PLATFORM:-linux/amd64}
@@ -44,6 +44,6 @@ docker run --rm \
   -v "$REPO_ROOT:/work" \
   -v "$WASI_SDK_HOST_PATH:/opt/wasi-sdk:ro" \
   -v "$NUGET_VOLUME_NAME:/root/.nuget/packages" \
-  -w /work/src/EMMA.TestPlugin/scripts \
+  -w /work/scripts \
   "$DOCKER_IMAGE" \
   bash -lc "apt-get update >/dev/null && apt-get install -y --no-install-recommends python3 zip >/dev/null && TARGETS='$TARGETS' WASI_SDK_PATH=/opt/wasi-sdk ./build-pack-plugin.sh '$manifest_container_path'"

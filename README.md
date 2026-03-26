@@ -5,27 +5,19 @@ A minimal gRPC plugin used to validate the host handshake and IPC flow during de
 ## Run
 
 ```bash
-dotnet run --project src/EMMA.TestPlugin/EMMA.TestPlugin.csproj
+dotnet run --project EMMA.TestPlugin.csproj
 ```
 
 Default port is 5005. Override with:
 
 ```bash
-dotnet run --project src/EMMA.TestPlugin/EMMA.TestPlugin.csproj -- --port 6001
+dotnet run --project EMMA.TestPlugin.csproj -- --port 6001
 ```
 
 or
 
 ```bash
-EMMA_TEST_PLUGIN_PORT=6001 dotnet run --project src/EMMA.TestPlugin/EMMA.TestPlugin.csproj
-```
-
-## Run with plugin host
-
-Use the helper script from repo root:
-
-```bash
-./scripts/run-plugin-host-with-test-plugin.sh
+EMMA_TEST_PLUGIN_PORT=6001 dotnet run --project EMMA.TestPlugin.csproj
 ```
 
 ## Validate and pack
@@ -33,20 +25,19 @@ Use the helper script from repo root:
 From repo root, use the canonical pack flow (includes manifest validation):
 
 ```bash
-./scripts/plugin-pack.sh ./src/EMMA.TestPlugin
+./scripts/build-pack-plugin.sh ./EMMA.TestPlugin.plugin.json
 ```
 
 Build wasm package variant:
 
 ```bash
-TARGETS="wasm" ./scripts/plugin-pack.sh ./src/EMMA.TestPlugin
+TARGETS="wasm" ./scripts/build-pack-plugin.sh ./EMMA.TestPlugin.plugin.json
 ```
 
 Build regular ASP.NET plugin package variant (for example Linux x64):
 
 ```bash
-cd src/EMMA.TestPlugin/scripts
-TARGETS="linux-x64" ./build-pack-plugin-aspnet.sh ../EMMA.TestPlugin.plugin.json
+TARGETS="linux-x64" ./scripts/build-pack-plugin-aspnet.sh ./EMMA.TestPlugin.plugin.json
 ```
 
 ## Mangadex data
@@ -56,7 +47,7 @@ The test plugin queries live data from the Mangadex API by default.
 Example:
 
 ```bash
-dotnet run --project src/EMMA.TestPlugin/EMMA.TestPlugin.csproj
+dotnet run --project EMMA.TestPlugin.csproj
 ```
 
 Notes:

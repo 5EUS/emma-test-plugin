@@ -1,0 +1,82 @@
+name: Release On Main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install packaging deps
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Bump plugin version
+        id: bump
+        run: |
+          chmod +x scripts/bump-plugin-version.py
+          NEXT_VERSION=$(python3 scripts/bump-plugin-version.py)
+          echo "next_version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "next_tag=v$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add EMMA.TestPlugin.plugin.json
+          git commit -m "chore(release): bump plugin version to ${{ steps.bump.outputs.next_version }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Build release package
+        run: |
+          chmod +x scripts/plugin-validate-manifest.sh
+          chmod +x scripts/build-pack-plugin-aspnet.sh
+          TARGETS="linux-x64" scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
+
+      - name: Compute sha256
+        id: sha
+        run: |
+          ASSET_PATH="artifacts/pack/emma.plugin.test_${{ steps.bump.outputs.next_version }}_linux-x64.zip"
+          SHA256=$(sha256sum "$ASSET_PATH" | awk '{print $1}')
+          echo "asset_path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Create Git tag
+        run: |
+          git tag "${{ steps.bump.outputs.next_tag }}"
+          git push origin "${{ steps.bump.outputs.next_tag }}"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.next_tag }}
+          name: ${{ steps.bump.outputs.next_tag }}
+          generate_release_notes: true
+          body: |
+            Automated release for EMMA Test Plugin.
+
+            Artifact SHA-256:
+            - `${{ steps.sha.outputs.sha256 }}`
+          files: |
+            ${{ steps.sha.outputs.asset_path }}

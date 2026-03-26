@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-ROOT_DIR=$(cd "$PLUGIN_DIR/../.." && pwd)
+ROOT_DIR="$PLUGIN_DIR"
 MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.TestPlugin.plugin.json}"
 OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"

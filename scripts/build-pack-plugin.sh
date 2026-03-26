@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-ROOT_DIR=$(cd "$PLUGIN_DIR/../.." && pwd)
+ROOT_DIR="$PLUGIN_DIR"
 MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.TestPlugin.plugin.json}"
 OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"
@@ -23,7 +23,7 @@ SKIP_WASM_BUILD="${SKIP_WASM_BUILD:-0}"
 CWASM_WASMTIME_TARGET="${CWASM_WASMTIME_TARGET:-}"
 CWASM_WASMTIME_BIN="${CWASM_WASMTIME_BIN:-wasmtime}"
 CWASM_EXPECTED_WASMTIME_VERSION="${CWASM_EXPECTED_WASMTIME_VERSION:-34.0.2}"
-CWASM_PRECOMPILE_TOOL="${CWASM_PRECOMPILE_TOOL:-$ROOT_DIR/tools/EMMA.CwasmPrecompile/target/release/emma_cwasm_precompile}"
+CWASM_PRECOMPILE_TOOL="${CWASM_PRECOMPILE_TOOL:-$ROOT_DIR/tools/emma_cwasm_precompile}"
 
 resolve_default_cwasm_target() {
   local rust_host
