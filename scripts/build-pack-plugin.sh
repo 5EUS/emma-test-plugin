@@ -153,14 +153,34 @@ build_wasm_component() {
     exit 1
   fi
 
-  WASI_SDK_PATH="$WASI_SDK_PATH" dotnet build "$WASM_PROJECT_PATH" \
+  local publish_log
+  publish_log="$WASM_BUILD_OUTPUT/publish.log"
+
+  if ! WASI_SDK_PATH="$WASI_SDK_PATH" dotnet publish "$WASM_PROJECT_PATH" \
     -c "$WASM_BUILD_CONFIGURATION" \
     -r "$WASM_BUILD_RID" \
+    --self-contained true \
     -p:PublishAot=false \
-    -p:WasmSingleFileBundle=true \
     -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
+    -p:WasmSingleFileBundle=true \
     -p:PluginTransport=Wasm \
-    -p:WASI_SDK_PATH="$WASI_SDK_PATH"
+    -o "$WASM_BUILD_OUTPUT" \
+    2>&1 | tee "$publish_log"; then
+    if grep -q "native/.*\.wasm\" because it was not found" "$publish_log" && [[ "$WASM_NATIVE_CODEGEN" == "none" ]]; then
+      echo "WASM publish produced no native artifact with NativeCodeGen=none; retrying with NativeCodeGen=llvm..."
+      WASI_SDK_PATH="$WASI_SDK_PATH" dotnet publish "$WASM_PROJECT_PATH" \
+        -c "$WASM_BUILD_CONFIGURATION" \
+        -r "$WASM_BUILD_RID" \
+        --self-contained true \
+        -p:PublishAot=false \
+        -p:NativeCodeGen=llvm \
+        -p:WasmSingleFileBundle=true \
+        -p:PluginTransport=Wasm \
+        -o "$WASM_BUILD_OUTPUT"
+    else
+      return 1
+    fi
+  fi
 
   local expected_name
   if [[ -n "$WASM_OUTPUT_NAME" ]]; then
@@ -172,7 +192,7 @@ build_wasm_component() {
   local project_dir
   project_dir="$(dirname "$WASM_PROJECT_PATH")"
 
-  local built_wasm
+  local built_wasm=""
   if [[ -z "$built_wasm" ]]; then
   built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/$expected_name" 2>/dev/null | head -n 1)"
   fi

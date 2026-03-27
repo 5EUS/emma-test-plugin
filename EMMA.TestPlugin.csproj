@@ -28,6 +28,8 @@
   <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">
     <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
     <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
+    <PackageReference Update="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-rc.1.26117.1" />
+    <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-rc.1.26117.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
     <Compile Remove="Services\**\*.cs" />
     <Wit Remove="**\*.wit" />

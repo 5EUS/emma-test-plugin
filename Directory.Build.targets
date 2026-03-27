@@ -1,0 +1,7 @@
+<Project>
+  <!--
+    Componentize SDK adds PublishAfterBuild -> Publish for wasi-wasm.
+    Override it after NuGet target imports to avoid publish graph cycles.
+  -->
+  <Target Name="PublishAfterBuild" Condition="'$(MSBuildProjectName)' == 'EMMA.TestPlugin' and '$(RuntimeIdentifier)' == 'wasi-wasm'" />
+</Project>

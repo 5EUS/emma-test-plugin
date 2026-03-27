@@ -27,7 +27,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Install packaging deps
         run: sudo apt-get update && sudo apt-get install -y zip
@@ -95,6 +95,7 @@ jobs:
 
           TARGETS="$WASM_TARGET" \
           EMMA_SDK_VERSION="$EMMA_SDK_VERSION" \
+          WASM_NATIVE_CODEGEN="llvm" \
           WASI_SDK_PATH="$WASI_SDK_PATH" \
           scripts/build-pack-plugin.sh EMMA.TestPlugin.plugin.json
 
