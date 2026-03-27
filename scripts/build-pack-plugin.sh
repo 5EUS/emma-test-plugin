@@ -148,6 +148,19 @@ build_wasm_component() {
   rm -rf "$WASM_BUILD_OUTPUT"
   mkdir -p "$WASM_BUILD_OUTPUT"
 
+  # Force a clean wasm-specific dependency graph so stale obj/bin artifacts cannot
+  # leak an incompatible ABI into the produced component.
+  local project_dir
+  project_dir="$(dirname "$WASM_PROJECT_PATH")"
+  rm -rf "$project_dir/bin/$WASM_BUILD_CONFIGURATION/$WASM_BUILD_RID"
+  rm -rf "$project_dir/obj/$WASM_BUILD_CONFIGURATION/net10.0/$WASM_BUILD_RID"
+
+  dotnet restore "$WASM_PROJECT_PATH" \
+    --no-cache \
+    --force-evaluate \
+    --runtime "$WASM_BUILD_RID" \
+    -p:PluginTransport=Wasm >/dev/null
+
   if [[ "$WASM_BUILD_TOOLCHAIN" != "componentize" ]]; then
     echo "Unsupported WASM_BUILD_TOOLCHAIN '$WASM_BUILD_TOOLCHAIN'. Only 'componentize' is supported." >&2
     exit 1
@@ -162,6 +175,8 @@ build_wasm_component() {
     --self-contained true \
     -p:PublishAot=false \
     -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
+    -p:DebugType=None \
+    -p:DebugSymbols=false \
     -p:WasmSingleFileBundle=true \
     -p:PluginTransport=Wasm \
     -o "$WASM_BUILD_OUTPUT" \
@@ -174,6 +189,8 @@ build_wasm_component() {
         --self-contained true \
         -p:PublishAot=false \
         -p:NativeCodeGen=llvm \
+        -p:DebugType=None \
+        -p:DebugSymbols=false \
         -p:WasmSingleFileBundle=true \
         -p:PluginTransport=Wasm \
         -o "$WASM_BUILD_OUTPUT"
@@ -189,24 +206,25 @@ build_wasm_component() {
     expected_name="$(basename "$WASM_PROJECT_PATH" .csproj).wasm"
   fi
 
-  local project_dir
-  project_dir="$(dirname "$WASM_PROJECT_PATH")"
-
   local built_wasm=""
-  if [[ -z "$built_wasm" ]]; then
-  built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/$expected_name" 2>/dev/null | head -n 1)"
+  mapfile -t wasm_candidates_by_name < <(find "$WASM_BUILD_OUTPUT" -type f -name "$expected_name" 2>/dev/null)
+  if [[ ${#wasm_candidates_by_name[@]} -eq 1 ]]; then
+    built_wasm="${wasm_candidates_by_name[0]}"
+  elif [[ ${#wasm_candidates_by_name[@]} -gt 1 ]]; then
+    echo "Multiple wasm outputs matched '$expected_name' under publish output; refusing ambiguous selection:" >&2
+    printf '  %s\n' "${wasm_candidates_by_name[@]}" >&2
+    exit 1
   fi
 
   if [[ -z "$built_wasm" ]]; then
-    built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/*.wasm" ! -name "dotnet.wasm" 2>/dev/null | head -n 1)"
-  fi
-
-  if [[ -z "$built_wasm" ]]; then
-    built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "$expected_name" 2>/dev/null | head -n 1)"
-  fi
-
-  if [[ -z "$built_wasm" ]]; then
-    built_wasm="$(find "$WASM_BUILD_OUTPUT" -type f -name "*.wasm" ! -name "dotnet.wasm" 2>/dev/null | head -n 1)"
+    mapfile -t wasm_candidates < <(find "$WASM_BUILD_OUTPUT" -type f -name "*.wasm" ! -name "dotnet.wasm" 2>/dev/null)
+    if [[ ${#wasm_candidates[@]} -eq 1 ]]; then
+      built_wasm="${wasm_candidates[0]}"
+    elif [[ ${#wasm_candidates[@]} -gt 1 ]]; then
+      echo "Multiple wasm outputs found under publish output; refusing ambiguous selection:" >&2
+      printf '  %s\n' "${wasm_candidates[@]}" >&2
+      exit 1
+    fi
   fi
 
   if [[ -z "$built_wasm" ]]; then

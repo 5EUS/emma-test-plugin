@@ -163,8 +163,9 @@ for TARGET in $TARGETS; do
   publish_args=(
     -c "$ASPNET_BUILD_CONFIGURATION"
     -r "$TARGET"
-    --self-contained true
+    --self-contained false
     -p:UseAppHost=true
+    -p:PublishSingleFile=true
     -p:PluginTransport=AspNet
     -o "$PUBLISH_DIR"
   )
@@ -180,23 +181,52 @@ for TARGET in $TARGETS; do
   dotnet publish "$PROJECT_PATH" \
     "${publish_args[@]}"
 
-  APP_RUNTIME_CONFIG=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -name "*.runtimeconfig.json" | head -n 1)
-  if [[ -z "$APP_RUNTIME_CONFIG" ]]; then
-    echo "Failed to locate runtimeconfig in publish output." >&2
-    exit 1
-  fi
+  find "$PUBLISH_DIR" -maxdepth 1 -type f \( -name "*.pdb" -o -name "*.dbg" -o -name "*.xml" \) -delete || true
+  rm -f "$PUBLISH_DIR/createdump"
 
-  APP_EXECUTABLE=$(basename "$APP_RUNTIME_CONFIG" .runtimeconfig.json)
+  APP_RUNTIME_CONFIG=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -name "*.runtimeconfig.json" | head -n 1)
+  APP_EXECUTABLE=""
+
+  if [[ -n "$APP_RUNTIME_CONFIG" ]]; then
+    APP_EXECUTABLE=$(basename "$APP_RUNTIME_CONFIG" .runtimeconfig.json)
+  else
+    PROJECT_BASENAME=$(basename "$PROJECT_PATH" .csproj)
+
+    if [[ "$TARGET" == win-* ]]; then
+      if [[ -f "$PUBLISH_DIR/${PROJECT_BASENAME}.exe" ]]; then
+        APP_EXECUTABLE="$PROJECT_BASENAME"
+      fi
+    else
+      if [[ -f "$PUBLISH_DIR/$PROJECT_BASENAME" ]]; then
+        APP_EXECUTABLE="$PROJECT_BASENAME"
+      fi
+    fi
+
+    if [[ -z "$APP_EXECUTABLE" ]]; then
+      if [[ "$TARGET" == win-* ]]; then
+        APP_EXECUTABLE=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -name "*.exe" | xargs -r -n1 basename | head -n 1 | sed 's/\.exe$//')
+      else
+        APP_EXECUTABLE=$(find "$PUBLISH_DIR" -maxdepth 1 -type f -executable | xargs -r -n1 basename | head -n 1)
+      fi
+    fi
+
+    if [[ -z "$APP_EXECUTABLE" ]]; then
+      echo "Failed to locate app executable in publish output." >&2
+      exit 1
+    fi
+  fi
 
   cp -R "$PUBLISH_DIR"/. "$PLUGIN_OUT_DIR/"
 
   if [[ "$TARGET" == win-* ]]; then
     if [[ -f "$PLUGIN_OUT_DIR/${APP_EXECUTABLE}.exe" && "${APP_EXECUTABLE}" != "$ENTRYPOINT_NAME" ]]; then
-      cp "$PLUGIN_OUT_DIR/${APP_EXECUTABLE}.exe" "$PLUGIN_OUT_DIR/${ENTRYPOINT_NAME}.exe"
+      mv "$PLUGIN_OUT_DIR/${APP_EXECUTABLE}.exe" "$PLUGIN_OUT_DIR/${ENTRYPOINT_NAME}.exe"
+      APP_EXECUTABLE="$ENTRYPOINT_NAME"
     fi
   else
     if [[ -f "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" && "$APP_EXECUTABLE" != "$ENTRYPOINT_NAME" ]]; then
-      cp "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" "$PLUGIN_OUT_DIR/$ENTRYPOINT_NAME"
+      mv "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" "$PLUGIN_OUT_DIR/$ENTRYPOINT_NAME"
+      APP_EXECUTABLE="$ENTRYPOINT_NAME"
     fi
 
     chmod +x "$PLUGIN_OUT_DIR/$APP_EXECUTABLE" || true
