@@ -153,12 +153,14 @@ build_wasm_component() {
     exit 1
   fi
 
-  WASI_SDK_PATH="$WASI_SDK_PATH" dotnet build "$WASM_PROJECT_PATH" \
+  WASI_SDK_PATH="$WASI_SDK_PATH" dotnet publish "$WASM_PROJECT_PATH" \
     -c "$WASM_BUILD_CONFIGURATION" \
     -r "$WASM_BUILD_RID" \
-    -p:WASI_SDK_PATH="$WASI_SDK_PATH" \
-    -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
-    -p:PluginTransport=Wasm
+    --self-contained true \
+    -p:PublishAot=false \
+    -p:WasmSingleFileBundle=true \
+    -p:PluginTransport=Wasm \
+    -o "$WASM_BUILD_OUTPUT"
 
   local expected_name
   if [[ -n "$WASM_OUTPUT_NAME" ]]; then
@@ -171,14 +173,6 @@ build_wasm_component() {
   project_dir="$(dirname "$WASM_PROJECT_PATH")"
 
   local built_wasm
-  if [[ "$WASM_BUILD_TOOLCHAIN" == "componentize" ]]; then
-    built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/native/$expected_name" 2>/dev/null | head -n 1)"
-
-    if [[ -z "$built_wasm" ]]; then
-      built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/native/*.wasm" 2>/dev/null | head -n 1)"
-    fi
-  fi
-
   if [[ -z "$built_wasm" ]]; then
   built_wasm="$(find "$project_dir/bin/$WASM_BUILD_CONFIGURATION" -type f -path "*/$WASM_BUILD_RID/AppBundle/$expected_name" 2>/dev/null | head -n 1)"
   fi
