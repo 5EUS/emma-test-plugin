@@ -153,14 +153,14 @@ build_wasm_component() {
     exit 1
   fi
 
-  WASI_SDK_PATH="$WASI_SDK_PATH" dotnet publish "$WASM_PROJECT_PATH" \
+  WASI_SDK_PATH="$WASI_SDK_PATH" dotnet build "$WASM_PROJECT_PATH" \
     -c "$WASM_BUILD_CONFIGURATION" \
     -r "$WASM_BUILD_RID" \
-    --self-contained true \
     -p:PublishAot=false \
     -p:WasmSingleFileBundle=true \
+    -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
     -p:PluginTransport=Wasm \
-    -o "$WASM_BUILD_OUTPUT"
+    -p:WASI_SDK_PATH="$WASI_SDK_PATH"
 
   local expected_name
   if [[ -n "$WASM_OUTPUT_NAME" ]]; then
