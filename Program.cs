@@ -293,7 +293,7 @@ public static partial class Program
                 "chapters" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => BuildOperationJsonResult(
                     JsonSerializer.Serialize(
                         BuildChapterOperationItems(request.mediaId ?? PluginJsonArgs.GetString(request.argsJson, "mediaId"), payloadJson),
-                        TestPluginWasmJsonContext.Default.ChapterOperationItemArray)),
+                        TestPluginWasmJsonContext.Default.WasmChapterOperationItemArray)),
                 "page" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokeSinglePage(request, payloadJson),
                 "pages" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokePages(request, payloadJson),
                 "benchmark" => BuildOperationJsonResult(
@@ -311,7 +311,7 @@ public static partial class Program
         }
     }
 
-    private static IReadOnlyList<ChapterOperationItem> BuildChapterOperationItems(string mediaId, string payloadJson)
+    private static IReadOnlyList<WasmChapterOperationItem> BuildChapterOperationItems(string mediaId, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(mediaId))
         {
@@ -328,7 +328,23 @@ public static partial class Program
             return [];
         }
 
-        return Mangadex.GetChapterOperationItemsFromPayload(mediaId, payloadJson);
+        var operationItems = Mangadex.GetChapterOperationItemsFromPayload(mediaId, payloadJson);
+        if (operationItems.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<WasmChapterOperationItem>(operationItems.Count);
+        foreach (var item in operationItems)
+        {
+            result.Add(new WasmChapterOperationItem(
+                item.id,
+                item.number,
+                item.title,
+                [.. item.uploaderGroups ?? []]));
+        }
+
+        return result;
     }
 
     private static string SerializePageForCli(string[] args, string stdinPayload)
@@ -532,7 +548,7 @@ public static partial class Program
     [JsonSerializable(typeof(CapabilityItem[]))]
     [JsonSerializable(typeof(SearchItem[]))]
     [JsonSerializable(typeof(ChapterItem[]))]
-    [JsonSerializable(typeof(ChapterOperationItem[]))]
+    [JsonSerializable(typeof(WasmChapterOperationItem[]))]
     [JsonSerializable(typeof(PageItem))]
     [JsonSerializable(typeof(PageItem[]))]
     [JsonSerializable(typeof(OperationResult))]
@@ -541,5 +557,11 @@ public static partial class Program
     private sealed partial class TestPluginWasmJsonContext : JsonSerializerContext
     {
     }
+
+    private sealed record WasmChapterOperationItem(
+        string id,
+        int number,
+        string title,
+        string[] uploaderGroups);
 #endif
 }

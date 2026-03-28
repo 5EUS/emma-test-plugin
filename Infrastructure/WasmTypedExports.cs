@@ -247,7 +247,7 @@ public static class PluginImpl
         }
 
         var encoded = Uri.EscapeDataString(mediaId.Trim());
-        return $"https://api.mangadex.org/manga/{encoded}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1";
+        return $"https://api.mangadex.org/manga/{encoded}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1&includes[]=scanlation_group";
     }
 
     private static string? BuildAtHomeUrl(string chapterId)

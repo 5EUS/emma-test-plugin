@@ -76,6 +76,7 @@ internal sealed class WasmMangadexClient
         {
             return [];
         }
+        var scanlationGroupNameById = BuildScanlationGroupNameById(doc.RootElement);
 
         var results = new List<ChapterItem>();
         var index = 0;
@@ -109,7 +110,8 @@ internal sealed class WasmMangadexClient
                     : $"Chapter {chapterText}";
             }
 
-            results.Add(new ChapterItem(id, number, title));
+            var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);
+            results.Add(new ChapterItem(id, number, title, uploaderGroups));
             index++;
         }
 
@@ -131,6 +133,7 @@ internal sealed class WasmMangadexClient
         {
             return [];
         }
+        var scanlationGroupNameById = BuildScanlationGroupNameById(doc.RootElement);
 
         var results = new List<ChapterOperationItem>();
         var index = 0;
@@ -164,7 +167,7 @@ internal sealed class WasmMangadexClient
                     : $"Chapter {chapterText}";
             }
 
-            var uploaderGroups = ExtractUploaderGroups(item);
+            var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);
             results.Add(new ChapterOperationItem(id, number, title, uploaderGroups));
             index++;
         }
@@ -270,7 +273,7 @@ internal sealed class WasmMangadexClient
         }
 
         var encodedMediaId = Uri.EscapeDataString(mediaId.Trim());
-        return TryFetchPayload($"https://api.mangadex.org/manga/{encodedMediaId}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1");
+        return TryFetchPayload($"https://api.mangadex.org/manga/{encodedMediaId}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1&includes[]=scanlation_group");
     }
 
     public string? FetchAtHomePayload(string chapterId)
@@ -411,7 +414,49 @@ internal sealed class WasmMangadexClient
         return null;
     }
 
-    private static string[] ExtractUploaderGroups(JsonElement chapterItem)
+    private static Dictionary<string, string> BuildScanlationGroupNameById(JsonElement root)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var included = PluginJsonElement.GetArray(root, "included");
+        if (included is null)
+        {
+            return map;
+        }
+
+        foreach (var item in included.Value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var type = PluginJsonElement.GetString(item, "type");
+            if (!string.Equals(type, "scanlation_group", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var id = PluginJsonElement.GetString(item, "id")?.Trim();
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var attributes = PluginJsonElement.GetObject(item, "attributes");
+            var name = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "name");
+            var normalizedName = name?.Trim();
+            if (!string.IsNullOrWhiteSpace(normalizedName))
+            {
+                map[id] = normalizedName;
+            }
+        }
+
+        return map;
+    }
+
+    private static string[] ExtractUploaderGroups(
+        JsonElement chapterItem,
+        IReadOnlyDictionary<string, string> scanlationGroupNameById)
     {
         if (!chapterItem.TryGetProperty("relationships", out var relationships) ||
             relationships.ValueKind != JsonValueKind.Array)
@@ -443,7 +488,16 @@ internal sealed class WasmMangadexClient
                 name = nameProp.GetString();
             }
 
-            name ??= PluginJsonElement.GetString(relation, "id");
+            var id = PluginJsonElement.GetString(relation, "id");
+            if (string.IsNullOrWhiteSpace(name)
+                && !string.IsNullOrWhiteSpace(id)
+                && scanlationGroupNameById.TryGetValue(id, out var resolvedName)
+                && !string.IsNullOrWhiteSpace(resolvedName))
+            {
+                name = resolvedName;
+            }
+
+            name ??= id;
             if (string.IsNullOrWhiteSpace(name))
             {
                 continue;

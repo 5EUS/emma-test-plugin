@@ -83,7 +83,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
             return [];
         }
 
-        var path = $"/manga/{Uri.EscapeDataString(mediaId)}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1";
+        var path = $"/manga/{Uri.EscapeDataString(mediaId)}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1&includes[]=scanlation_group";
         using var response = await GetWithPolicyAsync(path, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -94,6 +94,7 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         {
             return [];
         }
+        var scanlationGroupNameById = BuildScanlationGroupNameById(doc.RootElement);
 
         var results = new List<MediaChapter>();
         var index = 0;
@@ -127,12 +128,17 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
                     : $"Chapter {chapterText}";
             }
 
-            results.Add(new MediaChapter
+            var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);
+
+            var chapter = new MediaChapter
             {
                 Id = id,
                 Number = number,
                 Title = title
-            });
+            };
+            chapter.UploaderGroups.AddRange(uploaderGroups);
+
+            results.Add(chapter);
             index++;
         }
 
@@ -445,6 +451,108 @@ public sealed class MangadexClient(HttpClient httpClient, ILogger<MangadexClient
         }
 
         return null;
+    }
+
+    private static Dictionary<string, string> BuildScanlationGroupNameById(JsonElement root)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var included = PluginJsonElement.GetArray(root, "included");
+        if (included is null)
+        {
+            return map;
+        }
+
+        foreach (var item in included.Value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var type = PluginJsonElement.GetString(item, "type");
+            if (!string.Equals(type, "scanlation_group", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var id = PluginJsonElement.GetString(item, "id")?.Trim();
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var attributes = PluginJsonElement.GetObject(item, "attributes");
+            var name = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "name");
+            var normalizedName = name?.Trim();
+            if (!string.IsNullOrWhiteSpace(normalizedName))
+            {
+                map[id] = normalizedName;
+            }
+        }
+
+        return map;
+    }
+
+    private static string[] ExtractUploaderGroups(
+        JsonElement chapterItem,
+        IReadOnlyDictionary<string, string> scanlationGroupNameById)
+    {
+        if (!chapterItem.TryGetProperty("relationships", out var relationships)
+            || relationships.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var groups = new List<string>();
+        foreach (var relation in relationships.EnumerateArray())
+        {
+            if (relation.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (!relation.TryGetProperty("type", out var typeProp)
+                || typeProp.ValueKind != JsonValueKind.String
+                || !string.Equals(typeProp.GetString(), "scanlation_group", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? name = null;
+            if (relation.TryGetProperty("attributes", out var attributes)
+                && attributes.ValueKind == JsonValueKind.Object
+                && attributes.TryGetProperty("name", out var nameProp)
+                && nameProp.ValueKind == JsonValueKind.String)
+            {
+                name = nameProp.GetString();
+            }
+
+            var id = PluginJsonElement.GetString(relation, "id");
+            if (string.IsNullOrWhiteSpace(name)
+                && !string.IsNullOrWhiteSpace(id)
+                && scanlationGroupNameById.TryGetValue(id, out var resolvedName)
+                && !string.IsNullOrWhiteSpace(resolvedName))
+            {
+                name = resolvedName;
+            }
+
+            name ??= id;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var normalized = name.Trim();
+            if (normalized.Length == 0
+                || groups.Any(existing => string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            groups.Add(normalized);
+        }
+
+        return [.. groups];
     }
 
 }
