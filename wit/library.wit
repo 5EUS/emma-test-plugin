@@ -39,6 +39,7 @@ interface plugin {
     id: string,
     number: u32,
     title: string,
+    uploader-groups: list<string>,
   }
 
   record page-item {

@@ -116,6 +116,62 @@ internal sealed class WasmMangadexClient
         return results;
     }
 
+    public IReadOnlyList<ChapterOperationItem> GetChapterOperationItemsFromPayload(string mediaId, string payloadJson)
+    {
+        payloadJson = ResolvePayloadContent(payloadJson);
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
+
+        using var doc = JsonDocument.Parse(payloadJson);
+        var data = PluginJsonElement.GetArray(doc.RootElement, "data");
+        if (data is null)
+        {
+            return [];
+        }
+
+        var results = new List<ChapterOperationItem>();
+        var index = 0;
+        foreach (var item in data.Value.EnumerateArray())
+        {
+            var id = PluginJsonElement.GetString(item, "id");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var attributes = PluginJsonElement.GetObject(item, "attributes");
+            var pages = attributes is null ? null : PluginJsonElement.GetInt32(attributes.Value, "pages");
+            if (pages is not null && pages <= 0)
+            {
+                continue;
+            }
+
+            var title = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "title");
+            var chapterText = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "chapter");
+            var number = index + 1;
+            if (!string.IsNullOrWhiteSpace(chapterText) && int.TryParse(chapterText, out var parsed))
+            {
+                number = parsed;
+            }
+
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                title = string.IsNullOrWhiteSpace(chapterText)
+                    ? $"Chapter {number}"
+                    : $"Chapter {chapterText}";
+            }
+
+            var uploaderGroups = ExtractUploaderGroups(item);
+            results.Add(new ChapterOperationItem(id, number, title, uploaderGroups));
+            index++;
+        }
+
+        return results;
+    }
+
     public PageItem? GetPageFromPayload(string chapterId, int pageIndex, string payloadJson)
     {
         payloadJson = ResolvePayloadContent(payloadJson);
@@ -353,6 +409,57 @@ internal sealed class WasmMangadexClient
         }
 
         return null;
+    }
+
+    private static string[] ExtractUploaderGroups(JsonElement chapterItem)
+    {
+        if (!chapterItem.TryGetProperty("relationships", out var relationships) ||
+            relationships.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var groups = new List<string>();
+        foreach (var relation in relationships.EnumerateArray())
+        {
+            if (relation.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (!relation.TryGetProperty("type", out var typeProp) ||
+                typeProp.ValueKind != JsonValueKind.String ||
+                !string.Equals(typeProp.GetString(), "scanlation_group", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? name = null;
+            if (relation.TryGetProperty("attributes", out var attributes) &&
+                attributes.ValueKind == JsonValueKind.Object &&
+                attributes.TryGetProperty("name", out var nameProp) &&
+                nameProp.ValueKind == JsonValueKind.String)
+            {
+                name = nameProp.GetString();
+            }
+
+            name ??= PluginJsonElement.GetString(relation, "id");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var normalized = name.Trim();
+            if (normalized.Length == 0 ||
+                groups.Any(existing => string.Equals(existing, normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            groups.Add(normalized);
+        }
+
+        return [.. groups];
     }
 
     private readonly record struct AtHomePayload(

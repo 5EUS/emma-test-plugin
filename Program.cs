@@ -292,8 +292,8 @@ public static partial class Program
                         TestPluginWasmJsonContext.Default.SearchItemArray)),
                 "chapters" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => BuildOperationJsonResult(
                     JsonSerializer.Serialize(
-                        chapters(request.mediaId ?? PluginJsonArgs.GetString(request.argsJson, "mediaId"), payloadJson),
-                        TestPluginWasmJsonContext.Default.ChapterItemArray)),
+                        BuildChapterOperationItems(request.mediaId ?? PluginJsonArgs.GetString(request.argsJson, "mediaId"), payloadJson),
+                        TestPluginWasmJsonContext.Default.ChapterOperationItemArray)),
                 "page" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokeSinglePage(request, payloadJson),
                 "pages" when string.Equals(mediaType, "paged", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(mediaType) => InvokePages(request, payloadJson),
                 "benchmark" => BuildOperationJsonResult(
@@ -302,13 +302,33 @@ public static partial class Program
                     BenchmarkNetwork(
                         [PluginJsonArgs.GetString(request.argsJson, "query")],
                         payloadJson)),
-                _ => OperationResult.Error($"unsupported-operation:{operation}")
+                _ => OperationResult.UnsupportedOperation(operation)
             };
         }
         catch (Exception ex)
         {
-            return OperationResult.Error($"failed:{ex.Message}");
+            return OperationResult.Failed(ex.Message);
         }
+    }
+
+    private static IReadOnlyList<ChapterOperationItem> BuildChapterOperationItems(string mediaId, string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(mediaId))
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            payloadJson = Mangadex.FetchChaptersPayload(mediaId) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
+
+        return Mangadex.GetChapterOperationItemsFromPayload(mediaId, payloadJson);
     }
 
     private static string SerializePageForCli(string[] args, string stdinPayload)
@@ -359,7 +379,7 @@ public static partial class Program
         if (args.Length == 0)
         {
             return JsonSerializer.Serialize(
-                OperationResult.Error("invalid-arguments:missing operation"),
+                OperationResult.InvalidArguments("missing operation"),
                 TestPluginWasmJsonContext.Default.OperationResult);
         }
 
@@ -512,6 +532,7 @@ public static partial class Program
     [JsonSerializable(typeof(CapabilityItem[]))]
     [JsonSerializable(typeof(SearchItem[]))]
     [JsonSerializable(typeof(ChapterItem[]))]
+    [JsonSerializable(typeof(ChapterOperationItem[]))]
     [JsonSerializable(typeof(PageItem))]
     [JsonSerializable(typeof(PageItem[]))]
     [JsonSerializable(typeof(OperationResult))]
