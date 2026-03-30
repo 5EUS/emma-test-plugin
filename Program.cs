@@ -14,7 +14,7 @@ namespace EMMA.TestPlugin;
 public static partial class Program
 {
 #if PLUGIN_TRANSPORT_ASPNET
-    private static readonly PluginManifestDefaults ControlDefaults = PluginManifestDefaultsProvider.Load();
+    private static readonly ManifestDefaults ControlDefaults = ManifestDefaultsProvider.Load();
 
     public static void Main(string[] args)
     {
