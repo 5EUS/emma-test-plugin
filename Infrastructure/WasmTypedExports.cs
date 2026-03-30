@@ -1,6 +1,7 @@
 #if PLUGIN_TRANSPORT_WASM
 using System.Text.Json;
 using EMMA.Plugin.Common;
+using EMMA.TestPlugin.Infrastructure;
 using LibraryWorld;
 using LibraryWorld.wit.exports.emma.plugin;
 using LibraryWorld.wit.imports.emma.plugin;
@@ -9,6 +10,8 @@ namespace LibraryWorld.wit.exports.emma.plugin;
 
 public static class PluginImpl
 {
+    private static readonly PluginOperationPayloadRouter InvokePayloadRouter = BuildInvokePayloadRouter();
+
     public static IPlugin.HandshakeResponse Handshake()
     {
         var handshake = EMMA.TestPlugin.Program.handshake();
@@ -26,7 +29,7 @@ public static class PluginImpl
 
     public static List<IPlugin.MediaSearchItem> Search(string query, string payloadJson)
     {
-        payloadJson = ResolvePayload(payloadJson, "search", BuildSearchUrl(query));
+        payloadJson = ResolvePayload(payloadJson, "search", ProviderRequestUrls.BuildSearchAbsoluteUrl(query));
         var items = EMMA.TestPlugin.Program.search(query, payloadJson);
 
         return [.. items.Select(item => new IPlugin.MediaSearchItem(
@@ -41,7 +44,7 @@ public static class PluginImpl
 
     public static List<IPlugin.ChapterItem> Chapters(string mediaId, string payloadJson)
     {
-        payloadJson = ResolvePayload(payloadJson, "chapters", BuildChaptersUrl(mediaId));
+        payloadJson = ResolvePayload(payloadJson, "chapters", ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId));
         var items = EMMA.TestPlugin.Program.chapters(mediaId, payloadJson);
 
         return [.. items.Select(item => new IPlugin.ChapterItem(
@@ -53,7 +56,7 @@ public static class PluginImpl
 
     public static IPlugin.PageItem? Page(string mediaId, string chapterId, uint pageIndex, string payloadJson)
     {
-        payloadJson = ResolvePayload(payloadJson, "page", BuildAtHomeUrl(chapterId));
+        payloadJson = ResolvePayload(payloadJson, "page", ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId));
 
         var page = EMMA.TestPlugin.Program.page(mediaId, chapterId, pageIndex, payloadJson);
         if (page is null)
@@ -66,7 +69,7 @@ public static class PluginImpl
 
     public static List<IPlugin.PageItem> Pages(string mediaId, string chapterId, uint startIndex, uint count, string payloadJson)
     {
-        payloadJson = ResolvePayload(payloadJson, "pages", BuildAtHomeUrl(chapterId));
+        payloadJson = ResolvePayload(payloadJson, "pages", ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId));
 
         var pages = EMMA.TestPlugin.Program.pages(mediaId, chapterId, startIndex, count, payloadJson);
         return [.. pages.Select(page => new IPlugin.PageItem(page.id, checked((uint)page.index), page.contentUri))];
@@ -93,32 +96,17 @@ public static class PluginImpl
 
     private static string? ResolveInvokePayload(IPlugin.MediaOperationRequest request)
     {
-        if (!string.IsNullOrWhiteSpace(request.payloadJson))
-        {
-            return request.payloadJson;
-        }
+        var operationRequest = new OperationRequest(
+            request.operation,
+            request.mediaId,
+            request.mediaType,
+            request.argsJson,
+            request.payloadJson);
 
-        var operation = (request.operation ?? string.Empty).Trim().ToLowerInvariant();
-        var operationName = request.operation ?? string.Empty;
-        var searchArgs = PluginSearchQuery.Parse(request.argsJson);
-        return operation switch
-        {
-            "search" or "benchmark-network" =>
-                HostBridgeInterop.OperationPayload(operationName, BuildSearchUrl(searchArgs)),
-            "chapters" =>
-                HostBridgeInterop.OperationPayload(
-                    operationName,
-                    BuildChaptersUrl(request.mediaId ?? PluginJsonArgs.GetString(request.argsJson, "mediaId"))),
-            "page" =>
-                HostBridgeInterop.OperationPayload(
-                    operationName,
-                    BuildAtHomeUrl(PluginJsonArgs.GetString(request.argsJson, "chapterId"))),
-            "pages" =>
-                HostBridgeInterop.OperationPayload(
-                    operationName,
-                    BuildAtHomeUrl(PluginJsonArgs.GetString(request.argsJson, "chapterId"))),
-            _ => HostBridgeInterop.OperationPayload(operationName, request.argsJson)
-        };
+        return InvokePayloadRouter.Resolve(
+            operationRequest,
+            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint),
+            useArgsJsonFallbackHint: true);
     }
 
     private static string ResolvePayload(string payloadJson, string operation, string? payloadUrl)
@@ -136,157 +124,35 @@ public static class PluginImpl
         return HostBridgeInterop.OperationPayload(operation, payloadUrl) ?? string.Empty;
     }
 
-    private static string? BuildSearchUrl(string query)
-    {
-        return BuildSearchUrl(new PluginSearchQuery(query ?? string.Empty, [], [], [], null, null, null));
-    }
-
-    private static string? BuildSearchUrl(PluginSearchQuery query)
-    {
-        if (string.IsNullOrWhiteSpace(query.Query))
-        {
-            return null;
-        }
-
-        var parameters = new List<string>
-        {
-            $"title={Uri.EscapeDataString(query.Query.Trim())}",
-            "limit=20",
-            "includes[]=cover_art"
-        };
-
-        var contentRatings = query.GetFilterValues("core.maturity");
-        if (contentRatings.Count == 0)
-        {
-            contentRatings = ["safe", "suggestive"];
-        }
-
-        foreach (var rating in contentRatings)
-        {
-            parameters.Add($"contentRating[]={Uri.EscapeDataString(rating)}");
-        }
-
-        var includedTags = query.GetFilterValues("core.tags");
-        foreach (var tag in includedTags)
-        {
-            parameters.Add($"includedTags[]={Uri.EscapeDataString(tag)}");
-        }
-
-        var excludedTags = query.GetFilterValues("core.tags.exclude");
-        foreach (var tag in excludedTags)
-        {
-            parameters.Add($"excludedTags[]={Uri.EscapeDataString(tag)}");
-        }
-
-        foreach (var author in query.GetFilterValues("core.author"))
-        {
-            parameters.Add($"authors[]={Uri.EscapeDataString(author)}");
-        }
-
-        foreach (var artist in query.GetFilterValues("core.artist"))
-        {
-            parameters.Add($"artists[]={Uri.EscapeDataString(artist)}");
-        }
-
-        foreach (var status in query.GetFilterValues("core.status"))
-        {
-            parameters.Add($"status[]={Uri.EscapeDataString(status)}");
-        }
-
-        foreach (var demographic in query.GetFilterValues("core.demographic"))
-        {
-            parameters.Add($"publicationDemographic[]={Uri.EscapeDataString(demographic)}");
-        }
-
-        var translatedLanguage = query.GetQueryAddition("core.language");
-        if (!string.IsNullOrWhiteSpace(translatedLanguage))
-        {
-            parameters.Add($"availableTranslatedLanguage[]={Uri.EscapeDataString(translatedLanguage.Trim())}");
-        }
-
-        var originalLanguage = query.GetQueryAddition("core.originalLanguage");
-        if (!string.IsNullOrWhiteSpace(originalLanguage))
-        {
-            parameters.Add($"originalLanguage[]={Uri.EscapeDataString(originalLanguage.Trim())}");
-        }
-
-        var year = query.GetQueryAddition("core.year");
-        if (!string.IsNullOrWhiteSpace(year))
-        {
-            parameters.Add($"year={Uri.EscapeDataString(year.Trim())}");
-        }
-
-        var includedTagMode = query.GetQueryAddition("core.tags.mode");
-        if (includedTags.Count > 0 && !string.IsNullOrWhiteSpace(includedTagMode))
-        {
-            var normalizedIncludedMode = includedTagMode.Trim().ToUpperInvariant();
-            if (normalizedIncludedMode is "AND" or "OR")
-            {
-                parameters.Add($"includedTagsMode={Uri.EscapeDataString(normalizedIncludedMode)}");
-            }
-        }
-
-        var excludedTagMode = query.GetQueryAddition("core.tags.exclude.mode");
-        if (excludedTags.Count > 0 && !string.IsNullOrWhiteSpace(excludedTagMode))
-        {
-            var normalizedExcludedMode = excludedTagMode.Trim().ToUpperInvariant();
-            if (normalizedExcludedMode is "AND" or "OR")
-            {
-                parameters.Add($"excludedTagsMode={Uri.EscapeDataString(normalizedExcludedMode)}");
-            }
-        }
-
-        return $"https://api.mangadex.org/manga?{string.Join("&", parameters)}";
-    }
-
-    private static string? BuildChaptersUrl(string mediaId)
-    {
-        if (string.IsNullOrWhiteSpace(mediaId))
-        {
-            return null;
-        }
-
-        var encoded = Uri.EscapeDataString(mediaId.Trim());
-        return $"https://api.mangadex.org/manga/{encoded}/feed?limit=100&order[chapter]=asc&translatedLanguage[]=en&includeUnavailable=1&includes[]=scanlation_group";
-    }
-
-    private static string? BuildAtHomeUrl(string chapterId)
-    {
-        if (string.IsNullOrWhiteSpace(chapterId))
-        {
-            return null;
-        }
-
-        var encoded = Uri.EscapeDataString(chapterId.Trim());
-        return $"https://api.mangadex.org/at-home/server/{encoded}";
-    }
-
     private static WitException<IPlugin.OperationError> CreateOperationError(string? error)
     {
-        var message = string.IsNullOrWhiteSpace(error) ? "operation failed" : error.Trim();
-
-        if (message.StartsWith("unsupported-operation:", StringComparison.OrdinalIgnoreCase))
+        if (!PluginOperationError.TryParse(error, out var parsed))
         {
-            return new WitException<IPlugin.OperationError>(
-                IPlugin.OperationError.UnsupportedOperation(message["unsupported-operation:".Length..]),
-                0);
+            return new WitException<IPlugin.OperationError>(IPlugin.OperationError.Failed("operation failed"), 0);
         }
 
-        if (message.StartsWith("invalid-arguments:", StringComparison.OrdinalIgnoreCase))
+        return parsed.Kind switch
         {
-            return new WitException<IPlugin.OperationError>(
-                IPlugin.OperationError.InvalidArguments(message["invalid-arguments:".Length..]),
-                0);
-        }
+            PluginOperationErrorKind.UnsupportedOperation => new WitException<IPlugin.OperationError>(
+                IPlugin.OperationError.UnsupportedOperation(parsed.Message),
+                0),
+            PluginOperationErrorKind.InvalidArguments => new WitException<IPlugin.OperationError>(
+                IPlugin.OperationError.InvalidArguments(parsed.Message),
+                0),
+            _ => new WitException<IPlugin.OperationError>(
+                IPlugin.OperationError.Failed(parsed.Message),
+                0)
+        };
+    }
 
-        if (message.StartsWith("failed:", StringComparison.OrdinalIgnoreCase))
-        {
-            return new WitException<IPlugin.OperationError>(
-                IPlugin.OperationError.Failed(message["failed:".Length..]),
-                0);
-        }
-
-        return new WitException<IPlugin.OperationError>(IPlugin.OperationError.Failed(message), 0);
+    private static PluginOperationPayloadRouter BuildInvokePayloadRouter()
+    {
+        return new PluginOperationPayloadRouter()
+            .Register("search", request => ProviderRequestUrls.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(request.argsJson)))
+            .Register("benchmark-network", request => ProviderRequestUrls.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(request.argsJson)))
+            .Register("chapters", request => ProviderRequestUrls.BuildChaptersAbsoluteUrl(request.ResolveMediaId()))
+            .Register("page", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()))
+            .Register("pages", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()));
     }
 }
 #endif

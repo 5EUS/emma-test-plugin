@@ -5,7 +5,7 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.2.0</EmmaSdkVersion>
+    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.3.0</EmmaSdkVersion>
     <PluginTransport Condition="'$(PluginTransport)' == ''">AspNet</PluginTransport>
     <PluginTransport Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">Wasm</PluginTransport>
     <PluginTransport Condition="'$(PluginTransport)' == '' and '$(ExecCommand)' != ''">Wasm</PluginTransport>
