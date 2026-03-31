@@ -124,6 +124,16 @@ public static class PluginImpl
         return HostBridgeInterop.OperationPayload(operation, payloadUrl) ?? string.Empty;
     }
 
+    public static List<IPlugin.VideoStreamItem> VideoStreams(string mediaId, string payloadJson)
+    {
+        return [];
+    }
+
+    public static IPlugin.VideoSegmentItem? VideoSegment(string mediaId, string streamId, uint sequence, string payloadJson)
+    {
+        return null;
+    }
+
     private static WitException<IPlugin.OperationError> CreateOperationError(string? error)
     {
         if (!PluginOperationError.TryParse(error, out var parsed))

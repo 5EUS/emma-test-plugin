@@ -48,6 +48,17 @@ interface plugin {
     content-uri: string,
   }
 
+  record video-stream-item {
+    id: string,
+    label: string,
+    playlist-uri: string,
+  }
+
+  record video-segment-item {
+    content-type: string,
+    payload: list<u8>,
+  }
+
   record media-operation-request {
     operation: string,
     media-id: option<string>,
@@ -75,6 +86,8 @@ interface plugin {
   chapters: func(media-id: string, payload-json: string) -> list<chapter-item>;
   page: func(media-id: string, chapter-id: string, page-index: u32, payload-json: string) -> option<page-item>;
   pages: func(media-id: string, chapter-id: string, start-index: u32, count: u32, payload-json: string) -> list<page-item>;
+  video-streams: func(media-id: string, payload-json: string) -> list<video-stream-item>;
+  video-segment: func(media-id: string, stream-id: string, sequence: u32, payload-json: string) -> option<video-segment-item>;
 
   invoke: func(request: media-operation-request) -> result<media-operation-response, operation-error>;
 }

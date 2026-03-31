@@ -152,8 +152,8 @@ build_wasm_component() {
   # leak an incompatible ABI into the produced component.
   local project_dir
   project_dir="$(dirname "$WASM_PROJECT_PATH")"
-  rm -rf "$project_dir/bin/$WASM_BUILD_CONFIGURATION/$WASM_BUILD_RID"
-  rm -rf "$project_dir/obj/$WASM_BUILD_CONFIGURATION/net10.0/$WASM_BUILD_RID"
+  rm -rf "$project_dir/bin/"
+  rm -rf "$project_dir/obj/"
 
   dotnet restore "$WASM_PROJECT_PATH" \
     --no-cache \
