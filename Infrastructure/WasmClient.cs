@@ -80,8 +80,8 @@ internal sealed class WasmClient
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ProviderHttpProfile.UserAgent);
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", ProviderHttpProfile.AcceptMediaType);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ProviderHttpProfile.Defaults.UserAgent);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", ProviderHttpProfile.Defaults.AcceptMediaType);
         return client;
     }
 

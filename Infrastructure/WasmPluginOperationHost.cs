@@ -9,35 +9,72 @@ internal sealed class WasmPluginOperationHost
 {
     private readonly WasmClient _client = new();
     private readonly PluginOperationDispatcher _invokeDispatcher;
+    private readonly IReadOnlyDictionary<string, Func<string[], string, string>> _cliHandlers;
 
     public WasmPluginOperationHost()
     {
-        _invokeDispatcher = CreateInvokeDispatcher();
+        var host = new PluginWasmHostBuilder()
+            .AddCliJson(
+                PluginOperationNames.Handshake,
+                (_, _) => Handshake(),
+                WasmJsonContext.Default.HandshakeResponse)
+            .AddCliJson(
+                PluginOperationNames.Capabilities,
+                (_, _) => Capabilities(),
+                WasmJsonContext.Default.CapabilityItemArray)
+            .AddCliJson(
+                PluginOperationNames.Search,
+                (args, payload) => Search(args.Length > 0 ? args[0] : string.Empty, payload),
+                WasmJsonContext.Default.SearchItemArray)
+            .AddCliJson(
+                PluginOperationNames.Chapters,
+                (args, payload) => Chapters(args.Length > 0 ? args[0] : string.Empty, payload),
+                WasmJsonContext.Default.ChapterItemArray)
+            .AddCliHandler(PluginOperationNames.Page, SerializePageForCli)
+            .AddCliHandler(PluginOperationNames.Pages, SerializePagesForCli)
+            .AddCliHandler(PluginOperationNames.Invoke, SerializeInvokeForCli)
+            .AddCliHandler(PluginOperationNames.Benchmark, (args, _) => Benchmark(args))
+            .AddCliHandler(PluginOperationNames.BenchmarkNetwork, BenchmarkNetwork)
+            .ConfigureInvoke(dispatcher => dispatcher
+                .RegisterPagedOperations(
+                    search: request =>
+                    {
+                        var payloadJson = request.payloadJson ?? string.Empty;
+                        var searchArgs = PluginSearchQuery.Parse(request.argsJson);
+                        return BuildOperationJsonResult(
+                            JsonSerializer.Serialize(
+                                Search(searchArgs.Query, payloadJson),
+                                WasmJsonContext.Default.SearchItemArray));
+                    },
+                    chapters: request =>
+                    {
+                        var payloadJson = request.payloadJson ?? string.Empty;
+                        return BuildOperationJsonResult(
+                            JsonSerializer.Serialize(
+                                BuildChapterOperationItems(request.ResolveMediaId(), payloadJson),
+                                WasmJsonContext.Default.WasmChapterOperationItemArray));
+                    },
+                    page: request => InvokeSinglePage(request, request.payloadJson ?? string.Empty),
+                    pages: request => InvokePages(request, request.payloadJson ?? string.Empty))
+                .Register("benchmark", request =>
+                {
+                    var iterations = Math.Max(1, PluginJsonArgs.GetInt32(request.argsJson, "iterations") ?? 5000);
+                    return BuildOperationJsonResult(Benchmark([iterations.ToString()]));
+                })
+                .Register("benchmark-network", request =>
+                {
+                    var query = PluginJsonArgs.GetString(request.argsJson, "query");
+                    return BuildOperationJsonResult(BenchmarkNetwork([query], request.payloadJson ?? string.Empty));
+                }))
+            .Build();
+
+        _invokeDispatcher = host.InvokeDispatcher;
+        _cliHandlers = host.CliHandlers;
     }
 
     public string ExecuteOperationForCli(string operation, string[] args, string inputPayload)
     {
-        try
-        {
-            return operation switch
-            {
-                "handshake" => JsonSerializer.Serialize(Handshake(), WasmJsonContext.Default.HandshakeResponse),
-                "capabilities" => JsonSerializer.Serialize(Capabilities(), WasmJsonContext.Default.CapabilityItemArray),
-                "search" => JsonSerializer.Serialize(Search(args.Length > 0 ? args[0] : string.Empty, inputPayload), WasmJsonContext.Default.SearchItemArray),
-                "chapters" => JsonSerializer.Serialize(Chapters(args.Length > 0 ? args[0] : string.Empty, inputPayload), WasmJsonContext.Default.ChapterItemArray),
-                "page" => SerializePageForCli(args, inputPayload),
-                "pages" => SerializePagesForCli(args, inputPayload),
-                "invoke" => SerializeInvokeForCli(args, inputPayload),
-                "benchmark" => Benchmark(args),
-                "benchmark-network" => BenchmarkNetwork(args, inputPayload),
-                _ => string.Empty
-            };
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"WASM operation '{operation}' failed: {ex}");
-            return string.Empty;
-        }
+        return PluginWasmCliOperationDispatcher.Execute(operation, args, inputPayload, _cliHandlers);
     }
 
     public HandshakeResponse Handshake()
@@ -47,25 +84,7 @@ internal sealed class WasmPluginOperationHost
 
     public CapabilityItem[] Capabilities()
     {
-        return
-        [
-            new CapabilityItem(
-                "health",
-                ["paged", "video", "audio"],
-                ["handshake", "capabilities", "search", "invoke"]),
-            new CapabilityItem(
-                "search",
-                ["paged", "video", "audio"],
-                ["search", "invoke"]),
-            new CapabilityItem(
-                "paged-navigation",
-                ["paged"],
-                ["chapters", "page", "pages", "invoke"]),
-            new CapabilityItem(
-                "media-operation",
-                ["paged", "video", "audio"],
-                ["invoke"])
-        ];
+        return PluginCapabilityProfiles.Create(PluginCapabilityProfile.PagedOnly);
     }
 
     public SearchItem[] Search(string query, string payloadJson)
@@ -147,7 +166,7 @@ internal sealed class WasmPluginOperationHost
             return [];
         }
 
-        payloadJson = ResolvePayload(payloadJson, () => _client.FetchChaptersPayload(mediaId));
+        payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(payloadJson, () => _client.FetchChaptersPayload(mediaId));
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return [];
@@ -163,7 +182,7 @@ internal sealed class WasmPluginOperationHost
             return null;
         }
 
-        payloadJson = ResolvePayload(payloadJson, () => _client.FetchAtHomePayload(chapterId));
+        payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(payloadJson, () => _client.FetchAtHomePayload(chapterId));
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return null;
@@ -179,7 +198,7 @@ internal sealed class WasmPluginOperationHost
             return [];
         }
 
-        payloadJson = ResolvePayload(payloadJson, () => _client.FetchAtHomePayload(chapterId));
+        payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(payloadJson, () => _client.FetchAtHomePayload(chapterId));
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return [];
@@ -201,61 +220,6 @@ internal sealed class WasmPluginOperationHost
         return _invokeDispatcher.Dispatch(request);
     }
 
-    private PluginOperationDispatcher CreateInvokeDispatcher()
-    {
-        return new PluginOperationDispatcher()
-            .Register("search", request =>
-            {
-                var payloadJson = request.payloadJson ?? string.Empty;
-                var searchArgs = PluginSearchQuery.Parse(request.argsJson);
-                return BuildOperationJsonResult(
-                    JsonSerializer.Serialize(
-                        Search(searchArgs.Query, payloadJson),
-                        WasmJsonContext.Default.SearchItemArray));
-            })
-            .Register("chapters", request =>
-            {
-                if (!request.IsPagedMediaRequest())
-                {
-                    return OperationResult.UnsupportedOperation(request.NormalizedOperation());
-                }
-
-                var payloadJson = request.payloadJson ?? string.Empty;
-                return BuildOperationJsonResult(
-                    JsonSerializer.Serialize(
-                        BuildChapterOperationItems(request.ResolveMediaId(), payloadJson),
-                        WasmJsonContext.Default.WasmChapterOperationItemArray));
-            })
-            .Register("page", request =>
-            {
-                if (!request.IsPagedMediaRequest())
-                {
-                    return OperationResult.UnsupportedOperation(request.NormalizedOperation());
-                }
-
-                return InvokeSinglePage(request, request.payloadJson ?? string.Empty);
-            })
-            .Register("pages", request =>
-            {
-                if (!request.IsPagedMediaRequest())
-                {
-                    return OperationResult.UnsupportedOperation(request.NormalizedOperation());
-                }
-
-                return InvokePages(request, request.payloadJson ?? string.Empty);
-            })
-            .Register("benchmark", request =>
-            {
-                var iterations = Math.Max(1, PluginJsonArgs.GetInt32(request.argsJson, "iterations") ?? 5000);
-                return BuildOperationJsonResult(Benchmark([iterations.ToString()]));
-            })
-            .Register("benchmark-network", request =>
-            {
-                var query = PluginJsonArgs.GetString(request.argsJson, "query");
-                return BuildOperationJsonResult(BenchmarkNetwork([query], request.payloadJson ?? string.Empty));
-            });
-    }
-
     private IReadOnlyList<WasmChapterOperationItem> BuildChapterOperationItems(string mediaId, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(mediaId))
@@ -263,7 +227,7 @@ internal sealed class WasmPluginOperationHost
             return [];
         }
 
-        payloadJson = ResolvePayload(payloadJson, () => _client.FetchChaptersPayload(mediaId));
+        payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(payloadJson, () => _client.FetchChaptersPayload(mediaId));
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return [];
@@ -275,80 +239,40 @@ internal sealed class WasmPluginOperationHost
             return [];
         }
 
-        var result = new List<WasmChapterOperationItem>(operationItems.Count);
-        foreach (var item in operationItems)
-        {
-            result.Add(new WasmChapterOperationItem(
+        return PluginWasmPagingJsonHelpers.MapChapterOperationItems(
+            operationItems,
+            item => new WasmChapterOperationItem(
                 item.id,
                 item.number,
                 item.title,
                 [.. item.uploaderGroups ?? []]));
-        }
-
-        return result;
     }
 
     private string SerializePageForCli(string[] args, string stdinPayload)
     {
-        if (args.Length < 3)
-        {
-            return string.Empty;
-        }
-
-        var mediaId = args[0];
-        var chapterId = args[1];
-        if (!uint.TryParse(args[2], out var pageIndex))
-        {
-            return string.Empty;
-        }
-
-        var result = Page(mediaId, chapterId, pageIndex, stdinPayload);
-        if (result is null)
-        {
-            return "null";
-        }
-
-        return JsonSerializer.Serialize(result, WasmJsonContext.Default.PageItem);
+        return PluginWasmPagingJsonHelpers.SerializePageForCli(
+            args,
+            stdinPayload,
+            Page,
+            WasmJsonContext.Default.PageItem);
     }
 
     private string SerializePagesForCli(string[] args, string stdinPayload)
     {
-        if (args.Length < 4)
-        {
-            return string.Empty;
-        }
-
-        var mediaId = args[0];
-        var chapterId = args[1];
-        if (!uint.TryParse(args[2], out var startIndex)
-            || !uint.TryParse(args[3], out var count)
-            || count == 0)
-        {
-            return string.Empty;
-        }
-
-        var results = Pages(mediaId, chapterId, startIndex, count, stdinPayload);
-        return JsonSerializer.Serialize(results, WasmJsonContext.Default.PageItemArray);
+        return PluginWasmPagingJsonHelpers.SerializePagesForCli(
+            args,
+            stdinPayload,
+            Pages,
+            WasmJsonContext.Default.PageItemArray);
     }
 
     private string SerializeInvokeForCli(string[] args, string stdinPayload)
     {
-        if (args.Length == 0)
-        {
-            return JsonSerializer.Serialize(
-                OperationResult.InvalidArguments("missing operation"),
-                WasmJsonContext.Default.OperationResult);
-        }
-
-        var request = new OperationRequest(
-            args[0],
-            args.Length > 1 ? args[1] : null,
-            args.Length > 2 ? args[2] : null,
-            args.Length > 3 ? args[3] : null,
-            stdinPayload);
-
-        var result = Invoke(request);
-        return JsonSerializer.Serialize(result, WasmJsonContext.Default.OperationResult);
+        return PluginWasmInvokeScaffold.SerializeInvokeForCli(
+            args,
+            stdinPayload,
+            Invoke,
+            WasmJsonContext.Default.OperationResult);
     }
 
     private OperationResult InvokeSinglePage(OperationRequest request, string payloadJson)
@@ -375,7 +299,7 @@ internal sealed class WasmPluginOperationHost
 
     private static OperationResult BuildOperationJsonResult(string payloadJson)
     {
-        return new OperationResult(false, null, "application/json", payloadJson);
+        return PluginWasmInvokeScaffold.BuildJsonResult(payloadJson);
     }
 
     private static string Benchmark(string[] args)
@@ -419,7 +343,7 @@ internal sealed class WasmPluginOperationHost
     private string BenchmarkNetwork(string[] args, string stdinPayload)
     {
         var query = args.Length > 0 ? args[0] : "one piece";
-        var payloadJson = ResolvePayload(
+        var payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(
             WasmClient.ResolvePayloadContent(stdinPayload),
             () => _client.FetchSearchPayload(query));
 
@@ -481,14 +405,5 @@ internal sealed class WasmPluginOperationHost
             || PluginEnvironmentFlags.IsEnabled(Environment.GetEnvironmentVariable("EMMA_WASM_PAYLOAD_DIAGNOSTICS"));
     }
 
-    private static string ResolvePayload(string payloadJson, Func<string?> fetch)
-    {
-        if (!string.IsNullOrWhiteSpace(payloadJson))
-        {
-            return payloadJson;
-        }
-
-        return fetch() ?? string.Empty;
-    }
 }
 #endif

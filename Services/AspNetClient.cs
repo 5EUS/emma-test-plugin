@@ -41,10 +41,9 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
-        var results = new List<MediaSummary>(parsed.Results.Count);
-        foreach (var entry in parsed.Results)
-        {
-            results.Add(new MediaSummary
+        var results = PluginTypedExportScaffold.MapList(
+            parsed.Results,
+            entry => new MediaSummary
             {
                 Id = entry.id,
                 Source = entry.source,
@@ -53,7 +52,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
                 ThumbnailUrl = entry.thumbnailUrl ?? string.Empty,
                 Description = entry.description ?? string.Empty
             });
-        }
 
         _logger.LogInformation("Mangadex search query={Query} results={Count}", query, results.Count);
         return results;
@@ -72,19 +70,19 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var entries = Core.GetChaptersFromPayload(payloadJson);
-        var results = new List<MediaChapter>(entries.Count);
-        foreach (var entry in entries)
-        {
-            var chapter = new MediaChapter
+        var results = PluginTypedExportScaffold.MapList(
+            entries,
+            entry =>
             {
-                Id = entry.id,
-                Number = entry.number,
-                Title = entry.title
-            };
-            chapter.UploaderGroups.AddRange(entry.uploaderGroups ?? []);
-
-            results.Add(chapter);
-        }
+                var chapter = new MediaChapter
+                {
+                    Id = entry.id,
+                    Number = entry.number,
+                    Title = entry.title
+                };
+                chapter.UploaderGroups.AddRange(entry.uploaderGroups ?? []);
+                return chapter;
+            });
 
         _logger.LogInformation("Mangadex chapters mediaId={MediaId} count={Count}", mediaId, results.Count);
         return results;
@@ -284,11 +282,11 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var client = new HttpClient(handler)
         {
-            BaseAddress = ProviderHttpProfile.BaseUri
+            BaseAddress = ProviderHttpProfile.Defaults.BaseUri
         };
 
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(ProviderHttpProfile.UserAgent);
-        client.DefaultRequestHeaders.Accept.ParseAdd(ProviderHttpProfile.AcceptMediaType);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(ProviderHttpProfile.Defaults.UserAgent);
+        client.DefaultRequestHeaders.Accept.ParseAdd(ProviderHttpProfile.Defaults.AcceptMediaType);
         return client;
     }
 
