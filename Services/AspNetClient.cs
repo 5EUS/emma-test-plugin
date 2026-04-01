@@ -30,7 +30,12 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     public async Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken)
     {
-        var path = ProviderRequestUrls.BuildSearchPath(query);
+        var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
+        var resolvedQuery = await ProviderSearchQueryResolver.ResolveAsync(
+            parsedQuery,
+            FetchProviderPayloadForResolverAsync,
+            cancellationToken);
+        var path = ProviderRequestUrls.BuildSearchPath(resolvedQuery);
         if (string.IsNullOrWhiteSpace(path))
         {
             return [];
@@ -55,6 +60,25 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         _logger.LogInformation("Mangadex search query={Query} results={Count}", query, results.Count);
         return results;
+    }
+
+    private async Task<string?> FetchProviderPayloadForResolverAsync(
+        string absoluteUrl,
+        CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var pathAndQuery = string.Concat(uri.AbsolutePath, uri.Query);
+        using var response = await GetWithPolicyAsync(pathAndQuery, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<MediaChapter>> GetChaptersAsync(string mediaId, CancellationToken cancellationToken)

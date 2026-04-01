@@ -16,7 +16,13 @@ internal static class ProviderRequestUrls
 
     public static string? BuildSearchPath(string query)
     {
-        return Strategy.BuildSearchPath(query);
+        var parsed = PluginSearchQuery.Parse(query, fallbackQuery: query);
+        return BuildSearchPath(parsed);
+    }
+
+    public static string? BuildSearchPath(PluginSearchQuery query)
+    {
+        return PluginUriUtilities.ToPathAndQuery(Strategy.BuildSearchAbsoluteUrl(query));
     }
 
     public static string? BuildChaptersPath(string mediaId)
@@ -31,7 +37,7 @@ internal static class ProviderRequestUrls
 
     public static string? BuildSearchAbsoluteUrl(string query)
     {
-        return Strategy.BuildSearchAbsoluteUrl(query);
+        return Strategy.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(query, fallbackQuery: query));
     }
 
     public static string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
@@ -49,18 +55,42 @@ internal static class ProviderRequestUrls
         return Strategy.BuildAtHomeAbsoluteUrl(chapterId);
     }
 
-    private sealed class MangadexUrlStrategy : IPluginProviderUrlStrategy
+    public static string? BuildTagCatalogAbsoluteUrl()
     {
-        public string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
-        {
-        if (string.IsNullOrWhiteSpace(query.Query))
+        return new Uri(ProviderHttpProfile.Defaults.BaseUri, "/manga/tag").ToString();
+    }
+
+    public static string? BuildAuthorLookupAbsoluteUrl(string name, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(name))
         {
             return null;
         }
 
+        var cappedLimit = Math.Clamp(limit, 1, 10);
+        var query = $"name={Uri.EscapeDataString(name.Trim())}&limit={cappedLimit}";
+        return new Uri(ProviderHttpProfile.Defaults.BaseUri, $"/author?{query}").ToString();
+    }
+
+    private sealed class MangadexUrlStrategy : IPluginProviderUrlStrategy
+    {
+        public string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
+        {
+        if (string.IsNullOrWhiteSpace(query.Query)
+            && query.Filters.Count == 0
+            && query.QueryAdditions.Count == 0)
+        {
+            return null;
+        }
+
+        var pageSize = Math.Clamp(query.PageSize ?? 100, 1, 100);
+        var page = Math.Max(0, query.Page ?? 0);
+        var offset = page * pageSize;
+
         var parameters = new List<string>
         {
-            "limit=20",
+            $"limit={pageSize}",
+            $"offset={offset}",
             "includes[]=cover_art"
         };
 
@@ -106,12 +136,15 @@ internal static class ProviderRequestUrls
             }
         }
 
-        return PluginProviderUrlTemplates.BuildSearchAbsoluteUrl(
-            baseUri: ProviderHttpProfile.Defaults.BaseUri,
-            searchPath: "/manga",
-            queryParameterName: "title",
-            query: query.Query,
-            additionalParameters: parameters);
+        if (!string.IsNullOrWhiteSpace(query.Query))
+        {
+            PluginUriUtilities.AddQueryParameter(parameters, "title", query.Query.Trim());
+        }
+
+        return PluginUriUtilities.BuildAbsoluteUrl(
+            ProviderHttpProfile.Defaults.BaseUri,
+            "/manga",
+            parameters);
         }
 
         public string? BuildChaptersAbsoluteUrl(string mediaId)

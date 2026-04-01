@@ -41,7 +41,14 @@ internal sealed class WasmClient
 
     public string? FetchSearchPayload(string query)
     {
-        return TryFetchPayload(ProviderRequestUrls.BuildSearchAbsoluteUrl(query));
+        var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
+        return FetchSearchPayload(parsedQuery);
+    }
+
+    public string? FetchSearchPayload(PluginSearchQuery query)
+    {
+        var resolvedQuery = ProviderSearchQueryResolver.Resolve(query, TryFetchPayload);
+        return TryFetchPayload(ProviderRequestUrls.BuildSearchAbsoluteUrl(resolvedQuery));
     }
 
     public string? FetchChaptersPayload(string mediaId)

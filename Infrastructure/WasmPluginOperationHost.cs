@@ -43,7 +43,7 @@ internal sealed class WasmPluginOperationHost
                         var searchArgs = PluginSearchQuery.Parse(request.argsJson);
                         return BuildOperationJsonResult(
                             JsonSerializer.Serialize(
-                                Search(searchArgs.Query, payloadJson),
+                                Search(searchArgs, payloadJson),
                                 WasmJsonContext.Default.SearchItemArray));
                     },
                     chapters: request =>
@@ -89,16 +89,25 @@ internal sealed class WasmPluginOperationHost
 
     public SearchItem[] Search(string query, string payloadJson)
     {
+        var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
+        return Search(parsedQuery, payloadJson);
+    }
+
+    private SearchItem[] Search(PluginSearchQuery parsedQuery, string payloadJson)
+    {
+
         if (PluginEnvironment.IsDevelopmentMode())
         {
-            Console.WriteLine($"[SEARCH] Called with query='{query}' (empty={string.IsNullOrWhiteSpace(query)})");
+            Console.WriteLine($"[SEARCH] Called with query='{parsedQuery.Query}' (empty={string.IsNullOrWhiteSpace(parsedQuery.Query)})");
         }
 
-        if (string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(parsedQuery.Query)
+            && parsedQuery.Filters.Count == 0
+            && parsedQuery.QueryAdditions.Count == 0)
         {
             if (PluginEnvironment.IsDevelopmentMode())
             {
-                Console.WriteLine("[SEARCH] Returning empty results because query is null/whitespace");
+                Console.WriteLine("[SEARCH] Returning empty results because query and filters are empty");
             }
 
             return [];
@@ -112,7 +121,7 @@ internal sealed class WasmPluginOperationHost
         {
             payloadWasFetched = true;
             var fetchStopwatch = Stopwatch.StartNew();
-            payloadJson = _client.FetchSearchPayload(query) ?? string.Empty;
+            payloadJson = _client.FetchSearchPayload(parsedQuery) ?? string.Empty;
             fetchStopwatch.Stop();
             fetchMs = fetchStopwatch.ElapsedMilliseconds;
             if (PluginEnvironment.IsDevelopmentMode())
@@ -129,13 +138,13 @@ internal sealed class WasmPluginOperationHost
             }
 
             totalStopwatch.Stop();
-            EmitSearchSplitTiming(query, payloadJson, fetchMs, 0, 0, 0, payloadWasFetched, totalStopwatch.ElapsedMilliseconds);
+            EmitSearchSplitTiming(parsedQuery.Query, payloadJson, fetchMs, 0, 0, 0, payloadWasFetched, totalStopwatch.ElapsedMilliseconds);
             return [];
         }
 
         if (PluginEnvironment.IsDevelopmentMode())
         {
-            Console.WriteLine($"[SEARCH] Parsing payload for query='{query}'");
+            Console.WriteLine($"[SEARCH] Parsing payload for query='{parsedQuery.Query}'");
         }
 
         var parseMapResult = _client.SearchFromPayloadWithTimings(payloadJson);
@@ -147,7 +156,7 @@ internal sealed class WasmPluginOperationHost
         totalStopwatch.Stop();
 
         EmitSearchSplitTiming(
-            query,
+            parsedQuery.Query,
             payloadJson,
             fetchMs,
             parseMapResult.ParseMs,
@@ -343,9 +352,10 @@ internal sealed class WasmPluginOperationHost
     private string BenchmarkNetwork(string[] args, string stdinPayload)
     {
         var query = args.Length > 0 ? args[0] : "one piece";
+        var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
         var payloadJson = PluginPayloadResolvers.ResolveProvidedOrFetched(
             WasmClient.ResolvePayloadContent(stdinPayload),
-            () => _client.FetchSearchPayload(query));
+            () => _client.FetchSearchPayload(parsedQuery));
 
         var stopwatch = Stopwatch.StartNew();
         var payloadBytes = System.Text.Encoding.UTF8.GetByteCount(payloadJson ?? string.Empty);
@@ -361,7 +371,7 @@ internal sealed class WasmPluginOperationHost
         stopwatch.Stop();
 
         var result = new NetworkBenchmarkResult(
-            query,
+            parsedQuery.Query,
             payloadBytes,
             itemCount,
             stopwatch.ElapsedMilliseconds);

@@ -31,10 +31,13 @@ public static class PluginImpl
 
     public static List<IPlugin.MediaSearchItem> Search(string query, string payloadJson)
     {
+        var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
+        var resolvedSearchAbsoluteUrl = ResolveSearchAbsoluteUrl(parsedQuery);
+
         payloadJson = PluginPayloadResolvers.ResolveProvidedOrHostPayload(
             payloadJson,
             "search",
-            ProviderRequestUrls.BuildSearchAbsoluteUrl(query),
+            resolvedSearchAbsoluteUrl,
             (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
         var items = EMMA.TestPlugin.Program.search(query, payloadJson);
 
@@ -159,11 +162,27 @@ public static class PluginImpl
     private static PluginOperationPayloadRouter BuildInvokePayloadRouter()
     {
         return new PluginOperationPayloadRouter()
-            .Register("search", request => ProviderRequestUrls.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(request.argsJson)))
-            .Register("benchmark-network", request => ProviderRequestUrls.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(request.argsJson)))
+            .Register("search", request =>
+            {
+                var parsed = PluginSearchQuery.Parse(request.argsJson);
+                return ResolveSearchAbsoluteUrl(parsed);
+            })
+            .Register("benchmark-network", request =>
+            {
+                var parsed = PluginSearchQuery.Parse(request.argsJson);
+                return ResolveSearchAbsoluteUrl(parsed);
+            })
             .Register("chapters", request => ProviderRequestUrls.BuildChaptersAbsoluteUrl(request.ResolveMediaId()))
             .Register("page", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()))
             .Register("pages", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()));
+    }
+
+    private static string? ResolveSearchAbsoluteUrl(PluginSearchQuery parsedQuery)
+    {
+        var resolvedQuery = ProviderSearchQueryResolver.Resolve(
+            parsedQuery,
+            absoluteUrl => HostBridgeInterop.OperationPayload("search", absoluteUrl));
+        return ProviderRequestUrls.BuildSearchAbsoluteUrl(resolvedQuery);
     }
 }
 #endif
