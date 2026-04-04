@@ -1,11 +1,15 @@
 #if PLUGIN_TRANSPORT_WASM
 using System.Net.Http;
+using System.Text.Json;
 using EMMA.Plugin.Common;
 
 namespace EMMA.TestPlugin.Infrastructure;
 
 internal sealed class WasmClient
 {
+    private const int ChapterFeedPageSize = 500;
+    private const int ChapterFeedMaxPages = 20;
+
     private static readonly CoreClient Core = new();
     private static readonly HttpClient Http = CreateHttpClient();
 
@@ -17,12 +21,18 @@ internal sealed class WasmClient
 
     public IReadOnlyList<ChapterItem> GetChaptersFromPayload(string mediaId, string payloadJson)
     {
-        return Core.GetChaptersFromPayload(payloadJson);
+        return MapAllChapterPages(
+            mediaId,
+            payloadJson,
+            payload => Core.GetChaptersFromPayload(payload));
     }
 
     public IReadOnlyList<ChapterOperationItem> GetChapterOperationItemsFromPayload(string mediaId, string payloadJson)
     {
-        return Core.GetChapterOperationItemsFromPayload(payloadJson);
+        return MapAllChapterPages(
+            mediaId,
+            payloadJson,
+            payload => Core.GetChapterOperationItemsFromPayload(payload));
     }
 
     public PageItem? GetPageFromPayload(string chapterId, int pageIndex, string payloadJson)
@@ -66,6 +76,124 @@ internal sealed class WasmClient
         return CoreClient.ResolvePayloadContent(payload);
     }
 
+    private static IReadOnlyList<TChapter> MapAllChapterPages<TChapter>(
+        string mediaId,
+        string firstPayload,
+        Func<string, IReadOnlyList<TChapter>> mapper)
+        where TChapter : class
+    {
+        var firstNormalizedPayload = ResolvePayloadContent(firstPayload);
+        if (string.IsNullOrWhiteSpace(firstNormalizedPayload))
+        {
+            return [];
+        }
+
+        var combined = new List<TChapter>();
+        var seenChapterIds = new HashSet<string>(StringComparer.Ordinal);
+
+        AppendMappedChapters(firstNormalizedPayload, mapper, combined, seenChapterIds);
+
+        if (!TryGetChapterFeedPageStats(firstNormalizedPayload, out var firstStats))
+        {
+            return combined;
+        }
+
+        var fetchedPages = 1;
+        var nextOffset = firstStats.Offset + firstStats.DataCount;
+
+        while (fetchedPages < ChapterFeedMaxPages
+            && nextOffset < firstStats.Total
+            && !string.IsNullOrWhiteSpace(mediaId))
+        {
+            var nextPayload = TryFetchPayload(
+                ProviderRequestUrls.BuildChaptersAbsoluteUrl(
+                    mediaId,
+                    limit: ChapterFeedPageSize,
+                    offset: nextOffset));
+
+            if (string.IsNullOrWhiteSpace(nextPayload))
+            {
+                break;
+            }
+
+            AppendMappedChapters(nextPayload, mapper, combined, seenChapterIds);
+
+            if (!TryGetChapterFeedPageStats(nextPayload, out var nextStats) || nextStats.DataCount <= 0)
+            {
+                break;
+            }
+
+            nextOffset = nextStats.Offset + nextStats.DataCount;
+            fetchedPages++;
+        }
+
+        return combined;
+    }
+
+    private static void AppendMappedChapters<TChapter>(
+        string payload,
+        Func<string, IReadOnlyList<TChapter>> mapper,
+        List<TChapter> destination,
+        HashSet<string> seenChapterIds)
+        where TChapter : class
+    {
+        var mapped = mapper(payload);
+        if (mapped.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var chapter in mapped)
+        {
+            var chapterId = chapter switch
+            {
+                ChapterItem typed => typed.id,
+                ChapterOperationItem op => op.id,
+                _ => string.Empty
+            };
+
+            if (string.IsNullOrWhiteSpace(chapterId) || !seenChapterIds.Add(chapterId))
+            {
+                continue;
+            }
+
+            destination.Add(chapter);
+        }
+    }
+
+    private static bool TryGetChapterFeedPageStats(string payload, out ChapterFeedPageStats stats)
+    {
+        stats = default;
+
+        var normalized = ResolvePayloadContent(payload);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var dataCount = PluginJsonElement.GetArray(root, "data")?.GetArrayLength() ?? 0;
+            var total = PluginJsonElement.GetInt32(root, "total") ?? dataCount;
+            var offset = PluginJsonElement.GetInt32(root, "offset") ?? 0;
+
+            stats = new ChapterFeedPageStats(dataCount, total, offset);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static string? TryFetchPayload(string? absoluteUrl)
     {
         if (string.IsNullOrWhiteSpace(absoluteUrl))
@@ -96,5 +224,7 @@ internal sealed class WasmClient
         IReadOnlyList<SearchItem> Results,
         long ParseMs,
         long MapMs);
+
+    private readonly record struct ChapterFeedPageStats(int DataCount, int Total, int Offset);
 }
 #endif

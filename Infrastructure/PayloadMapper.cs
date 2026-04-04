@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using EMMA.Plugin.Common;
 
 namespace EMMA.TestPlugin.Infrastructure;
@@ -7,6 +9,9 @@ internal static class PayloadMapper
 {
     public const string SourceId = "mangadex";
     public const string MediaTypePaged = "paged";
+    private static readonly Regex ChapterPrefixPattern = new(
+        @"(^|\b)chapter\s+\d+(?:\.\d+)?(\b|$)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     public static IReadOnlyList<MangadexSearchEntry> ParseSearchEntries(JsonElement root)
     {
         var data = PluginJsonElement.GetArray(root, "data");
@@ -74,12 +79,22 @@ internal static class PayloadMapper
             {
                 number = parsed;
             }
+            else if (!string.IsNullOrWhiteSpace(chapterText)
+                && double.TryParse(chapterText, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDecimal))
+            {
+                number = (int)Math.Truncate(parsedDecimal);
+            }
 
             if (string.IsNullOrWhiteSpace(title))
             {
                 title = string.IsNullOrWhiteSpace(chapterText)
                     ? $"Chapter {number}"
                     : $"Chapter {chapterText}";
+            }
+            else if (!string.IsNullOrWhiteSpace(chapterText)
+                && !ChapterPrefixPattern.IsMatch(title))
+            {
+                title = $"Chapter {chapterText} · {title.Trim()}";
             }
 
             var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);

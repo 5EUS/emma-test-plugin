@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
+using System.Text.Json;
 using EMMA.Plugin.Common;
 using EMMA.Plugin.AspNetCore;
 using EMMA.Contracts.Plugins;
@@ -13,6 +14,9 @@ namespace EMMA.TestPlugin.Services;
 public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> logger)
     : IPluginPagedMediaRuntime, IPluginVideoRuntime
 {
+    private const int ChapterFeedPageSize = 500;
+    private const int ChapterFeedMaxPages = 20;
+
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<AspNetClient> _logger = logger;
@@ -83,17 +87,12 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     public async Task<IReadOnlyList<MediaChapter>> GetChaptersAsync(string mediaId, CancellationToken cancellationToken)
     {
-        var path = ProviderRequestUrls.BuildChaptersPath(mediaId);
-        if (string.IsNullOrWhiteSpace(path))
+        if (string.IsNullOrWhiteSpace(mediaId))
         {
             return [];
         }
 
-        using var response = await GetWithPolicyAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        var entries = Core.GetChaptersFromPayload(payloadJson);
+        var entries = await FetchAllChapterEntriesAsync(mediaId, cancellationToken);
         var results = PluginTypedExportScaffold.MapList(
             entries,
             entry =>
@@ -110,6 +109,57 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         _logger.LogInformation("Mangadex chapters mediaId={MediaId} count={Count}", mediaId, results.Count);
         return results;
+    }
+
+    private async Task<IReadOnlyList<ChapterItem>> FetchAllChapterEntriesAsync(
+        string mediaId,
+        CancellationToken cancellationToken)
+    {
+        var allEntries = new List<ChapterItem>();
+        var seenChapterIds = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
+
+        for (var page = 0; page < ChapterFeedMaxPages; page++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var path = ProviderRequestUrls.BuildChaptersPath(mediaId, limit: ChapterFeedPageSize, offset: offset);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                break;
+            }
+
+            using var response = await GetWithPolicyAsync(path, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var entries = Core.GetChaptersFromPayload(payloadJson);
+
+            foreach (var entry in entries)
+            {
+                if (string.IsNullOrWhiteSpace(entry.id) || !seenChapterIds.Add(entry.id))
+                {
+                    continue;
+                }
+
+                allEntries.Add(entry);
+            }
+
+            if (!TryGetChapterFeedPageStats(payloadJson, out var stats) || stats.DataCount <= 0)
+            {
+                break;
+            }
+
+            var nextOffset = stats.Offset + stats.DataCount;
+            if (nextOffset >= stats.Total)
+            {
+                break;
+            }
+
+            offset = nextOffset;
+        }
+
+        return allEntries;
     }
 
     public async Task<MediaPage?> GetPageAsync(string chapterId, int pageIndex, CancellationToken cancellationToken)
@@ -344,4 +394,39 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         return TimeSpan.FromMilliseconds(400 * attempt);
     }
+
+    private static bool TryGetChapterFeedPageStats(string payloadJson, out ChapterFeedPageStats stats)
+    {
+        stats = default;
+
+        var normalized = CoreClient.ResolvePayloadContent(payloadJson);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(normalized);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var dataCount = PluginJsonElement.GetArray(root, "data")?.GetArrayLength() ?? 0;
+            var total = PluginJsonElement.GetInt32(root, "total") ?? dataCount;
+            var offset = PluginJsonElement.GetInt32(root, "offset") ?? 0;
+
+            stats = new ChapterFeedPageStats(dataCount, total, offset);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private readonly record struct ChapterFeedPageStats(int DataCount, int Total, int Offset);
 }

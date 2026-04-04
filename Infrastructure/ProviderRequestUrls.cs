@@ -27,7 +27,12 @@ internal static class ProviderRequestUrls
 
     public static string? BuildChaptersPath(string mediaId)
     {
-        return Strategy.BuildChaptersPath(mediaId);
+        return BuildChaptersPath(mediaId, limit: 500, offset: 0);
+    }
+
+    public static string? BuildChaptersPath(string mediaId, int limit, int offset)
+    {
+        return PluginUriUtilities.ToPathAndQuery(BuildChaptersAbsoluteUrl(mediaId, limit, offset));
     }
 
     public static string? BuildAtHomePath(string chapterId)
@@ -47,7 +52,27 @@ internal static class ProviderRequestUrls
 
     public static string? BuildChaptersAbsoluteUrl(string mediaId)
     {
-        return Strategy.BuildChaptersAbsoluteUrl(mediaId);
+        return BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
+    }
+
+    public static string? BuildChaptersAbsoluteUrl(string mediaId, int limit, int offset)
+    {
+        var cappedLimit = Math.Clamp(limit, 1, 500);
+        var normalizedOffset = Math.Max(0, offset);
+
+        return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
+            baseUri: ProviderHttpProfile.Defaults.BaseUri,
+            pathTemplate: "/manga/{id}/feed",
+            id: mediaId,
+            queryParameters:
+            [
+                $"limit={cappedLimit}",
+                $"offset={normalizedOffset}",
+                "order[chapter]=asc",
+                "translatedLanguage[]=en",
+                "includeUnavailable=1",
+                "includes[]=scanlation_group"
+            ]);
     }
 
     public static string? BuildAtHomeAbsoluteUrl(string chapterId)
@@ -149,11 +174,7 @@ internal static class ProviderRequestUrls
 
         public string? BuildChaptersAbsoluteUrl(string mediaId)
         {
-        return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
-            baseUri: ProviderHttpProfile.Defaults.BaseUri,
-            pathTemplate: "/manga/{id}/feed",
-            id: mediaId,
-            queryParameters: ["limit=100", "order[chapter]=asc", "translatedLanguage[]=en", "includeUnavailable=1", "includes[]=scanlation_group"]);
+        return ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
         }
 
         public string? BuildAtHomeAbsoluteUrl(string chapterId)
