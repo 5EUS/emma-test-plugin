@@ -15,6 +15,7 @@ fi
 python3 - "$MANIFEST_PATH" <<'PY'
 import json
 import pathlib
+import re
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
@@ -48,10 +49,41 @@ if signature is not None:
     else:
         algorithm = signature.get("algorithm")
         value = signature.get("value")
-        if algorithm is not None and (not isinstance(algorithm, str) or not algorithm.strip()):
-            errors.append("signature.algorithm must be a non-empty string when present.")
+        key_id = signature.get("keyId")
+        repository_id = signature.get("repositoryId")
+        issued_at_utc = signature.get("issuedAtUtc")
+        expires_at_utc = signature.get("expiresAtUtc")
+        manifest_digest = signature.get("manifestDigestSha256")
+        payload_digest = signature.get("payloadDigestSha256")
+
+        if algorithm is not None:
+            if not isinstance(algorithm, str) or not algorithm.strip():
+                errors.append("signature.algorithm must be a non-empty string when present.")
+            elif algorithm.strip().lower() != "rsa-sha256":
+                errors.append("signature.algorithm must be 'rsa-sha256' when signature is present.")
+
         if value is not None and (not isinstance(value, str) or not value.strip()):
             errors.append("signature.value must be a non-empty string when present.")
+
+        if key_id is not None and (not isinstance(key_id, str) or not key_id.strip()):
+            errors.append("signature.keyId must be a non-empty string when present.")
+
+        if repository_id is not None and (not isinstance(repository_id, str) or not repository_id.strip()):
+            errors.append("signature.repositoryId must be a non-empty string when present.")
+
+        if issued_at_utc is not None and (not isinstance(issued_at_utc, str) or not issued_at_utc.strip()):
+            errors.append("signature.issuedAtUtc must be a non-empty string when present.")
+
+        if expires_at_utc is not None and (not isinstance(expires_at_utc, str) or not expires_at_utc.strip()):
+            errors.append("signature.expiresAtUtc must be a non-empty string when present.")
+
+        if manifest_digest is not None:
+            if not isinstance(manifest_digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", manifest_digest):
+                errors.append("signature.manifestDigestSha256 must be a 64-char hex SHA-256 when present.")
+
+        if payload_digest is not None:
+            if not isinstance(payload_digest, str) or (payload_digest and not re.fullmatch(r"[0-9a-fA-F]{64}", payload_digest)):
+                errors.append("signature.payloadDigestSha256 must be empty or a 64-char hex SHA-256 when present.")
 
 if errors:
     print(f"Manifest validation failed: {manifest_path}")

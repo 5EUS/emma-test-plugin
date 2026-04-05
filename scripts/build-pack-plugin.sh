@@ -24,6 +24,32 @@ CWASM_WASMTIME_TARGET="${CWASM_WASMTIME_TARGET:-}"
 CWASM_WASMTIME_BIN="${CWASM_WASMTIME_BIN:-wasmtime}"
 CWASM_EXPECTED_WASMTIME_VERSION="${CWASM_EXPECTED_WASMTIME_VERSION:-34.0.2}"
 CWASM_PRECOMPILE_TOOL="${CWASM_PRECOMPILE_TOOL:-$ROOT_DIR/tools/emma_cwasm_precompile}"
+SIGNING_PRIVATE_KEY_BASE64="${EMMA_PLUGIN_SIGNING_PRIVATE_KEY_BASE64:-${EMMA_HMAC_KEY_BASE64:-}}"
+SIGNING_PRIVATE_KEY_PEM="${EMMA_PLUGIN_SIGNING_PRIVATE_KEY_PEM:-}"
+SIGNING_KEY_ID="${EMMA_PLUGIN_SIGNING_KEY_ID:-${EMMA_PLUGIN_SIGNATURE_KEY_ID:-emma-test-shared-release-2026-q2}}"
+SIGNING_REPOSITORY_ID="${EMMA_PLUGIN_REPOSITORY_ID:-emma-test}"
+SIGNING_ISSUED_AT_UTC="${EMMA_PLUGIN_SIGNATURE_ISSUED_AT_UTC:-}"
+SIGNING_EXPIRES_AT_UTC="${EMMA_PLUGIN_SIGNATURE_EXPIRES_AT_UTC:-}"
+
+resolve_env_flag() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    echo "0"
+    return 0
+  fi
+
+  case "${value,,}" in
+    1|true|yes|on)
+      echo "1"
+      ;;
+    *)
+      echo "0"
+      ;;
+  esac
+}
+
+REQUIRE_SIGNED_PLUGINS_VALUE="${EMMA_REQUIRE_SIGNED_PLUGINS:-${PluginSignature__RequireSignedPlugins:-}}"
+REQUIRE_SIGNING="$(resolve_env_flag "$REQUIRE_SIGNED_PLUGINS_VALUE")"
 
 resolve_default_cwasm_target() {
   local rust_host
@@ -273,6 +299,12 @@ if [[ -x "$ROOT_DIR/scripts/plugin-validate-manifest.sh" ]]; then
   "$ROOT_DIR/scripts/plugin-validate-manifest.sh" "$MANIFEST_PATH"
 fi
 
+if [[ "$REQUIRE_SIGNING" == "1" && -z "$SIGNING_PRIVATE_KEY_BASE64" && -z "$SIGNING_PRIVATE_KEY_PEM" ]]; then
+  echo "Signed plugins are required, but no delegated signing key is configured." >&2
+  echo "Set EMMA_PLUGIN_SIGNING_PRIVATE_KEY_BASE64 (or EMMA_HMAC_KEY_BASE64 alias) or EMMA_PLUGIN_SIGNING_PRIVATE_KEY_PEM." >&2
+  exit 1
+fi
+
 manifest_fields=()
 while IFS= read -r line; do
   manifest_fields+=("$line")
@@ -358,8 +390,14 @@ for TARGET in $TARGETS; do
   MANIFEST_OUT="$MANIFEST_OUT_DIR/$PLUGIN_ID.json"
   cp "$MANIFEST_PATH" "$MANIFEST_OUT"
 
-  if [[ -n "${EMMA_HMAC_KEY_BASE64:-}" ]]; then
-    "$SCRIPT_DIR/sign-plugin.sh" "$MANIFEST_OUT"
+  if [[ -n "$SIGNING_PRIVATE_KEY_BASE64" || -n "$SIGNING_PRIVATE_KEY_PEM" ]]; then
+    EMMA_PLUGIN_SIGNING_PRIVATE_KEY_BASE64="$SIGNING_PRIVATE_KEY_BASE64" \
+    EMMA_PLUGIN_SIGNING_PRIVATE_KEY_PEM="$SIGNING_PRIVATE_KEY_PEM" \
+    EMMA_PLUGIN_SIGNING_KEY_ID="$SIGNING_KEY_ID" \
+    EMMA_PLUGIN_REPOSITORY_ID="$SIGNING_REPOSITORY_ID" \
+    EMMA_PLUGIN_SIGNATURE_ISSUED_AT_UTC="$SIGNING_ISSUED_AT_UTC" \
+    EMMA_PLUGIN_SIGNATURE_EXPIRES_AT_UTC="$SIGNING_EXPIRES_AT_UTC" \
+    "$SCRIPT_DIR/sign-plugin.sh" "$MANIFEST_OUT" "$PLUGIN_OUT_DIR"
   fi
 
   ( cd "$PACKAGE_ROOT" && zip -r "../${PLUGIN_ID}_${PLUGIN_VERSION}_${TARGET}.zip" . ) >/dev/null

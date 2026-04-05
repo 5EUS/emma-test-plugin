@@ -56,5 +56,10 @@ package.json
 .tmp/
 logs/
 
+# Local signing materials
+.keys/
+*.private.pem
+.signing.env
+
 EMMA.code-workspace
 src/EMMA.WasmRuntime.Native/target
