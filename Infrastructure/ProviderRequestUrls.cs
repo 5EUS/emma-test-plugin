@@ -101,89 +101,89 @@ internal static class ProviderRequestUrls
     {
         public string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
         {
-        if (string.IsNullOrWhiteSpace(query.Query)
-            && query.Filters.Count == 0
-            && query.QueryAdditions.Count == 0)
-        {
-            return null;
-        }
+            if (string.IsNullOrWhiteSpace(query.Query)
+                && query.Filters.Count == 0
+                && query.QueryAdditions.Count == 0)
+            {
+                return null;
+            }
 
-        var pageSize = Math.Clamp(query.PageSize ?? 100, 1, 100);
-        var page = Math.Max(0, query.Page ?? 0);
-        var offset = page * pageSize;
+            var pageSize = Math.Clamp(query.PageSize ?? 100, 1, 100);
+            var page = Math.Max(0, query.Page ?? 0);
+            var offset = page * pageSize;
 
-        var parameters = new List<string>
+            var parameters = new List<string>
         {
             $"limit={pageSize}",
             $"offset={offset}",
             "includes[]=cover_art"
         };
 
-        var contentRatings = query.GetFilterValues("core.maturity");
-        if (contentRatings.Count == 0)
-        {
-            contentRatings = ["safe", "suggestive"];
-        }
-
-        PluginUriUtilities.AddQueryParameters(parameters, "contentRating[]", contentRatings);
-
-        var includedTags = query.GetFilterValues("core.tags");
-        var excludedTags = query.GetFilterValues("core.tags.exclude");
-
-        PluginUriUtilities.AddQueryParameters(parameters, "includedTags[]", includedTags);
-        PluginUriUtilities.AddQueryParameters(parameters, "excludedTags[]", excludedTags);
-        PluginUriUtilities.AddQueryParameters(parameters, "authors[]", query.GetFilterValues("core.author"));
-        PluginUriUtilities.AddQueryParameters(parameters, "artists[]", query.GetFilterValues("core.artist"));
-        PluginUriUtilities.AddQueryParameters(parameters, "status[]", query.GetFilterValues("core.status"));
-        PluginUriUtilities.AddQueryParameters(parameters, "publicationDemographic[]", query.GetFilterValues("core.demographic"));
-
-        PluginUriUtilities.AddQueryParameter(parameters, "availableTranslatedLanguage[]", query.GetQueryAddition("core.language"));
-        PluginUriUtilities.AddQueryParameter(parameters, "originalLanguage[]", query.GetQueryAddition("core.originalLanguage"));
-        PluginUriUtilities.AddQueryParameter(parameters, "year", query.GetQueryAddition("core.year"));
-
-        var includedTagMode = query.GetQueryAddition("core.tags.mode");
-        if (includedTags.Count > 0 && !string.IsNullOrWhiteSpace(includedTagMode))
-        {
-            var normalizedIncludedMode = includedTagMode.Trim().ToUpperInvariant();
-            if (normalizedIncludedMode is "AND" or "OR")
+            var contentRatings = query.GetFilterValues("core.maturity");
+            if (contentRatings.Count == 0)
             {
-                PluginUriUtilities.AddQueryParameter(parameters, "includedTagsMode", normalizedIncludedMode);
+                contentRatings = ["safe", "suggestive"];
             }
-        }
 
-        var excludedTagMode = query.GetQueryAddition("core.tags.exclude.mode");
-        if (excludedTags.Count > 0 && !string.IsNullOrWhiteSpace(excludedTagMode))
-        {
-            var normalizedExcludedMode = excludedTagMode.Trim().ToUpperInvariant();
-            if (normalizedExcludedMode is "AND" or "OR")
+            PluginUriUtilities.AddQueryParameters(parameters, "contentRating[]", contentRatings);
+
+            var includedTags = query.GetFilterValues("core.tags");
+            var excludedTags = query.GetFilterValues("core.tags.exclude");
+
+            PluginUriUtilities.AddQueryParameters(parameters, "includedTags[]", includedTags);
+            PluginUriUtilities.AddQueryParameters(parameters, "excludedTags[]", excludedTags);
+            PluginUriUtilities.AddQueryParameters(parameters, "authors[]", query.GetFilterValues("core.author"));
+            PluginUriUtilities.AddQueryParameters(parameters, "artists[]", query.GetFilterValues("core.artist"));
+            PluginUriUtilities.AddQueryParameters(parameters, "status[]", query.GetFilterValues("core.status"));
+            PluginUriUtilities.AddQueryParameters(parameters, "publicationDemographic[]", query.GetFilterValues("core.demographic"));
+
+            PluginUriUtilities.AddQueryParameter(parameters, "availableTranslatedLanguage[]", query.GetQueryAddition("core.language"));
+            PluginUriUtilities.AddQueryParameter(parameters, "originalLanguage[]", query.GetQueryAddition("core.originalLanguage"));
+            PluginUriUtilities.AddQueryParameter(parameters, "year", query.GetQueryAddition("core.year"));
+
+            var includedTagMode = query.GetQueryAddition("core.tags.mode");
+            if (includedTags.Count > 0 && !string.IsNullOrWhiteSpace(includedTagMode))
             {
-                PluginUriUtilities.AddQueryParameter(parameters, "excludedTagsMode", normalizedExcludedMode);
+                var normalizedIncludedMode = includedTagMode.Trim().ToUpperInvariant();
+                if (normalizedIncludedMode is "AND" or "OR")
+                {
+                    PluginUriUtilities.AddQueryParameter(parameters, "includedTagsMode", normalizedIncludedMode);
+                }
             }
-        }
 
-        if (!string.IsNullOrWhiteSpace(query.Query))
-        {
-            PluginUriUtilities.AddQueryParameter(parameters, "title", query.Query.Trim());
-        }
+            var excludedTagMode = query.GetQueryAddition("core.tags.exclude.mode");
+            if (excludedTags.Count > 0 && !string.IsNullOrWhiteSpace(excludedTagMode))
+            {
+                var normalizedExcludedMode = excludedTagMode.Trim().ToUpperInvariant();
+                if (normalizedExcludedMode is "AND" or "OR")
+                {
+                    PluginUriUtilities.AddQueryParameter(parameters, "excludedTagsMode", normalizedExcludedMode);
+                }
+            }
 
-        return PluginUriUtilities.BuildAbsoluteUrl(
-            ProviderHttpProfile.Defaults.BaseUri,
-            "/manga",
-            parameters);
+            if (!string.IsNullOrWhiteSpace(query.Query))
+            {
+                PluginUriUtilities.AddQueryParameter(parameters, "title", query.Query.Trim());
+            }
+
+            return PluginUriUtilities.BuildAbsoluteUrl(
+                ProviderHttpProfile.Defaults.BaseUri,
+                "/manga",
+                parameters);
         }
 
         public string? BuildChaptersAbsoluteUrl(string mediaId)
         {
-        return ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
+            return ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
         }
 
         public string? BuildAtHomeAbsoluteUrl(string chapterId)
         {
-        return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
-            baseUri: ProviderHttpProfile.Defaults.BaseUri,
-            pathTemplate: "/at-home/server/{id}",
-            id: chapterId,
-            queryParameters: []);
+            return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
+                baseUri: ProviderHttpProfile.Defaults.BaseUri,
+                pathTemplate: "/at-home/server/{id}",
+                id: chapterId,
+                queryParameters: []);
         }
     }
 }

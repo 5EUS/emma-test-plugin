@@ -50,20 +50,108 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
+        var metadataById = ExtractSearchMetadata(payloadJson);
         var results = PluginTypedExportScaffold.MapList(
             parsed.Results,
-            entry => new MediaSummary
-            {
-                Id = entry.id,
-                Source = entry.source,
-                Title = entry.title,
-                MediaType = entry.mediaType,
-                ThumbnailUrl = entry.thumbnailUrl ?? string.Empty,
-                Description = entry.description ?? string.Empty
-            });
+            entry => BuildMediaSummary(entry, metadataById));
 
         _logger.LogInformation("Mangadex search query={Query} results={Count}", query, results.Count);
         return results;
+    }
+
+    private static IReadOnlyDictionary<string, List<MetadataItem>> ExtractSearchMetadata(string payloadJson)
+    {
+        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return metadataById;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            {
+                return metadataById;
+            }
+
+            foreach (var item in data.EnumerateArray())
+            {
+                if (!item.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var id = idProp.GetString();
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                var metadata = ExtractItemMetadata(item);
+                if (metadata.Count > 0)
+                {
+                    metadataById[id] = metadata;
+                }
+            }
+        }
+        catch
+        {
+            // Silently ignore parsing errors
+        }
+
+        return metadataById;
+    }
+
+    private static List<MetadataItem> ExtractItemMetadata(JsonElement item)
+    {
+        var metadata = new List<MetadataItem>();
+
+        if (!item.TryGetProperty("attributes", out var attributes) || attributes.ValueKind != JsonValueKind.Object)
+        {
+            return metadata;
+        }
+
+        if (attributes.TryGetProperty("contentRating", out var contentRating) && contentRating.ValueKind == JsonValueKind.String)
+        {
+            var rating = contentRating.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(rating))
+            {
+                metadata.Add(new MetadataItem("Content Rating", rating));
+            }
+        }
+
+        if (attributes.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
+        {
+            var statusValue = status.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(statusValue))
+            {
+                metadata.Add(new MetadataItem("Status", statusValue));
+            }
+        }
+
+        return metadata;
+    }
+
+    private static MediaSummary BuildMediaSummary(
+        EMMA.Plugin.Common.SearchItem entry,
+        IReadOnlyDictionary<string, List<MetadataItem>> metadataById)
+    {
+        IReadOnlyList<MetadataItem>? metadata = null;
+        if (metadataById.TryGetValue(entry.id, out var items))
+        {
+            metadata = items;
+        }
+
+        return new MediaSummary(
+            entry.id,
+            entry.source,
+            entry.title,
+            entry.mediaType,
+            entry.thumbnailUrl ?? string.Empty,
+            entry.description ?? string.Empty,
+            metadata);
     }
 
     private async Task<string?> FetchProviderPayloadForResolverAsync(

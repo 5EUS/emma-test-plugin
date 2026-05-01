@@ -43,6 +43,7 @@ public static class PluginImpl
             resolvedSearchAbsoluteUrl,
             (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
         var items = EMMA.TestPlugin.Program.search(query, payloadJson);
+        var metadataById = ExtractSearchMetadata(payloadJson);
 
         return PluginTypedExportScaffold.MapList(
             items,
@@ -53,7 +54,7 @@ public static class PluginImpl
                 item.mediaType,
                 item.thumbnailUrl,
                 item.description,
-                []));
+                BuildMetadata(metadataById, item.id)));
     }
 
     public static List<IPlugin.ChapterItem> Chapters(string mediaId, string payloadJson)
@@ -128,6 +129,99 @@ public static class PluginImpl
             InvokePayloadRouter,
             (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint),
             useArgsJsonFallbackHint: true);
+    }
+
+    private static List<IPlugin.KeyValue> BuildMetadata(
+        IReadOnlyDictionary<string, List<(string, string)>> metadataById,
+        string id)
+    {
+        if (!metadataById.TryGetValue(id, out var metadata))
+        {
+            return [];
+        }
+
+        var result = new List<IPlugin.KeyValue>(metadata.Count);
+        foreach (var (key, value) in metadata)
+        {
+            result.Add(new IPlugin.KeyValue(key, value));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, List<(string, string)>> ExtractSearchMetadata(string payloadJson)
+    {
+        var metadataById = new Dictionary<string, List<(string, string)>>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return metadataById;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            {
+                return metadataById;
+            }
+
+            foreach (var item in data.EnumerateArray())
+            {
+                if (!item.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var id = idProp.GetString();
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                var metadata = ExtractItemMetadata(item);
+                if (metadata.Count > 0)
+                {
+                    metadataById[id] = metadata;
+                }
+            }
+        }
+        catch
+        {
+            // Silently ignore parsing errors
+        }
+
+        return metadataById;
+    }
+
+    private static List<(string, string)> ExtractItemMetadata(JsonElement item)
+    {
+        var metadata = new List<(string, string)>();
+
+        if (!item.TryGetProperty("attributes", out var attributes) || attributes.ValueKind != JsonValueKind.Object)
+        {
+            return metadata;
+        }
+
+        if (attributes.TryGetProperty("contentRating", out var contentRating) && contentRating.ValueKind == JsonValueKind.String)
+        {
+            var rating = contentRating.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(rating))
+            {
+                metadata.Add(("Content Rating", rating));
+            }
+        }
+
+        if (attributes.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
+        {
+            var statusValue = status.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(statusValue))
+            {
+                metadata.Add(("Status", statusValue));
+            }
+        }
+
+        return metadata;
     }
 
     public static List<IPlugin.VideoStreamItem> VideoStreams(string mediaId, string payloadJson)
