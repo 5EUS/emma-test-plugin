@@ -45,6 +45,56 @@ internal static class PayloadMapper
         return results;
     }
 
+    public static IReadOnlyDictionary<string, List<MetadataItem>> ExtractSearchMetadata(JsonElement root)
+    {
+        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        var includedNames = BuildIncludedNameLookup(root);
+
+        var data = PluginJsonElement.GetArray(root, "data");
+        if (data is null)
+        {
+            return metadataById;
+        }
+
+        foreach (var item in data.Value.EnumerateArray())
+        {
+            var id = PluginJsonElement.GetString(item, "id");
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var metadata = ExtractSearchItemMetadata(item, includedNames);
+            if (metadata.Count > 0)
+            {
+                metadataById[id] = metadata;
+            }
+        }
+
+        return metadataById;
+    }
+
+    public static IReadOnlyDictionary<string, List<MetadataItem>> ExtractStatisticsMetadata(JsonElement root)
+    {
+        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        var statistics = PluginJsonElement.GetObject(root, "statistics");
+        if (statistics is null)
+        {
+            return metadataById;
+        }
+
+        foreach (var item in statistics.Value.EnumerateObject())
+        {
+            var metadata = ExtractStatisticsItemMetadata(item.Value);
+            if (metadata.Count > 0)
+            {
+                metadataById[item.Name] = metadata;
+            }
+        }
+
+        return metadataById;
+    }
+
     public static IReadOnlyList<MangadexChapterEntry> ParseChapterEntries(JsonElement root)
     {
         var data = PluginJsonElement.GetArray(root, "data");
@@ -208,6 +258,282 @@ internal static class PayloadMapper
         }
 
         return null;
+    }
+
+    private static List<MetadataItem> ExtractSearchItemMetadata(
+        JsonElement item,
+        IReadOnlyDictionary<string, string> includedNames)
+    {
+        var metadata = new List<MetadataItem>();
+
+        var attributes = PluginJsonElement.GetObject(item, "attributes");
+        if (attributes is null)
+        {
+            return metadata;
+        }
+
+        AddLocalizedList(metadata, "Alt Titles", PluginJsonElement.GetArray(attributes.Value, "altTitles"));
+
+        if (attributes.Value.TryGetProperty("year", out var yearProp) &&
+            (yearProp.ValueKind == JsonValueKind.Number || yearProp.ValueKind == JsonValueKind.String))
+        {
+            var year = yearProp.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(year))
+            {
+                metadata.Add(new MetadataItem("Year", year));
+            }
+        }
+
+        if (attributes.Value.TryGetProperty("publicationDemographic", out var demographicProp) &&
+            demographicProp.ValueKind == JsonValueKind.String)
+        {
+            var demographic = demographicProp.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(demographic))
+            {
+                metadata.Add(new MetadataItem("Demographic", demographic));
+            }
+        }
+
+        if (attributes.Value.TryGetProperty("contentRating", out var contentRating) &&
+            contentRating.ValueKind == JsonValueKind.String)
+        {
+            var rating = contentRating.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(rating))
+            {
+                metadata.Add(new MetadataItem("Content Rating", rating));
+            }
+        }
+
+        if (attributes.Value.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
+        {
+            var statusValue = status.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(statusValue))
+            {
+                metadata.Add(new MetadataItem("Status", statusValue));
+            }
+        }
+
+        AddTagNames(metadata, attributes.Value);
+
+        AddRelationshipNames(metadata, item, includedNames, "author", "Author");
+        AddRelationshipNames(metadata, item, includedNames, "artist", "Artist");
+
+        return metadata;
+    }
+
+    private static List<MetadataItem> ExtractStatisticsItemMetadata(JsonElement item)
+    {
+        var metadata = new List<MetadataItem>();
+
+        if (!item.TryGetProperty("rating", out var rating) || rating.ValueKind != JsonValueKind.Object)
+        {
+            return metadata;
+        }
+
+        var score = GetRatingScore(rating);
+        if (!string.IsNullOrWhiteSpace(score))
+        {
+            metadata.Add(new MetadataItem("Rating", score));
+        }
+
+        return metadata;
+    }
+
+    private static string? GetRatingScore(JsonElement rating)
+    {
+        if (rating.TryGetProperty("bayesian", out var bayesian) &&
+            (bayesian.ValueKind == JsonValueKind.Number || bayesian.ValueKind == JsonValueKind.String))
+        {
+            var value = bayesian.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        if (rating.TryGetProperty("average", out var average) &&
+            (average.ValueKind == JsonValueKind.Number || average.ValueKind == JsonValueKind.String))
+        {
+            var value = average.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static void AddLocalizedList(
+        List<MetadataItem> metadata,
+        string label,
+        JsonElement? array)
+    {
+        if (array is null || array.Value.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var values = new List<string>();
+        foreach (var item in array.Value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var text = item.GetString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    values.Add(text);
+                }
+                continue;
+            }
+
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var localized = PluginJsonElement.PickMapString(item);
+            if (!string.IsNullOrWhiteSpace(localized))
+            {
+                values.Add(localized);
+            }
+        }
+
+        if (values.Count > 0)
+        {
+            metadata.Add(new MetadataItem(label, string.Join(", ", values.Distinct(StringComparer.OrdinalIgnoreCase))));
+        }
+    }
+
+    private static void AddTagNames(List<MetadataItem> metadata, JsonElement attributes)
+    {
+        if (!attributes.TryGetProperty("tags", out var tags) || tags.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var names = new List<string>();
+        foreach (var tag in tags.EnumerateArray())
+        {
+            if (tag.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var tagAttributes = PluginJsonElement.GetObject(tag, "attributes");
+            if (tagAttributes is null)
+            {
+                continue;
+            }
+
+            var nameMap = PluginJsonElement.GetObject(tagAttributes.Value, "name");
+            var name = PluginJsonElement.PickMapString(nameMap)?.Trim();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                names.Add(name);
+                continue;
+            }
+
+            var fallbackName = PluginJsonElement.GetString(tagAttributes.Value, "name")?.Trim();
+            if (!string.IsNullOrWhiteSpace(fallbackName))
+            {
+                names.Add(fallbackName);
+            }
+        }
+
+        if (names.Count > 0)
+        {
+            metadata.Add(new MetadataItem("Genres", string.Join(", ", names.Distinct(StringComparer.OrdinalIgnoreCase))));
+        }
+    }
+
+    private static void AddRelationshipNames(
+        List<MetadataItem> metadata,
+        JsonElement item,
+        IReadOnlyDictionary<string, string> includedNames,
+        string relationshipType,
+        string label)
+    {
+        if (!item.TryGetProperty("relationships", out var relationships) || relationships.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var names = new List<string>();
+        foreach (var relationship in relationships.EnumerateArray())
+        {
+            if (relationship.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var type = PluginJsonElement.GetString(relationship, "type");
+            if (!string.Equals(type, relationshipType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var id = PluginJsonElement.GetString(relationship, "id")?.Trim();
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            if (includedNames.TryGetValue($"{relationshipType}:{id}", out var name) && !string.IsNullOrWhiteSpace(name))
+            {
+                names.Add(name);
+            }
+        }
+
+        if (names.Count > 0)
+        {
+            metadata.Add(new MetadataItem(label, string.Join(", ", names.Distinct(StringComparer.OrdinalIgnoreCase))));
+        }
+    }
+
+    private static Dictionary<string, string> BuildIncludedNameLookup(JsonElement root)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var included = PluginJsonElement.GetArray(root, "included");
+        if (included is null)
+        {
+            return map;
+        }
+
+        foreach (var item in included.Value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var type = PluginJsonElement.GetString(item, "type")?.Trim();
+            var id = PluginJsonElement.GetString(item, "id")?.Trim();
+            if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var attributes = PluginJsonElement.GetObject(item, "attributes");
+            if (attributes is null)
+            {
+                continue;
+            }
+
+            var name = PluginJsonElement.GetString(attributes.Value, "name")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                var titleMap = PluginJsonElement.GetObject(attributes.Value, "name");
+                name = PluginJsonElement.PickMapString(titleMap)?.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                map[$"{type}:{id}"] = name;
+            }
+        }
+
+        return map;
     }
 
     private static Dictionary<string, string> BuildScanlationGroupNameById(JsonElement root)

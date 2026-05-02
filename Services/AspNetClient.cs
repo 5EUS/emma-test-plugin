@@ -50,7 +50,15 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
-        var metadataById = ExtractSearchMetadata(payloadJson);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
+        var metadataById = new Dictionary<string, List<MetadataItem>>(PayloadMapper.ExtractSearchMetadata(payloadDoc.RootElement), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in parsed.Results)
+        {
+            var statistics = await FetchStatisticsMetadataAsync(entry.id, cancellationToken);
+            MergeMetadata(metadataById, statistics);
+        }
+
         var results = PluginTypedExportScaffold.MapList(
             parsed.Results,
             entry => BuildMediaSummary(entry, metadataById));
@@ -144,14 +152,80 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             metadata = items;
         }
 
-        return new MediaSummary(
-            entry.id,
-            entry.source,
-            entry.title,
-            entry.mediaType,
-            entry.thumbnailUrl ?? string.Empty,
-            entry.description ?? string.Empty,
-            metadata);
+        var result = new MediaSummary{
+            Id = entry.id,
+            Source = entry.source,
+            Title = entry.title,
+            MediaType = entry.mediaType,
+            ThumbnailUrl = entry.thumbnailUrl ?? string.Empty,
+            Description = entry.description ?? string.Empty,
+        };
+
+        if (metadata is not null)
+        {
+            foreach (var item in metadata)
+            {
+                result.Metadata.Add(new KeyValue{ Key = item.key, Value = item.value });
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsMetadataAsync(
+        string mangaId,
+        CancellationToken cancellationToken)
+    {
+        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        using var response = await _httpClient.GetAsync(url, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            return new Dictionary<string, List<MetadataItem>>(
+                PayloadMapper.ExtractStatisticsMetadata(doc.RootElement),
+                StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void MergeMetadata(
+        IDictionary<string, List<MetadataItem>> target,
+        IReadOnlyDictionary<string, List<MetadataItem>> source)
+    {
+        foreach (var (id, items) in source)
+        {
+            if (items.Count == 0)
+            {
+                continue;
+            }
+
+            if (!target.TryGetValue(id, out var existing))
+            {
+                target[id] = new List<MetadataItem>(items);
+                continue;
+            }
+
+            existing.AddRange(items);
+        }
     }
 
     private async Task<string?> FetchProviderPayloadForResolverAsync(

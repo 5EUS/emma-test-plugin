@@ -43,7 +43,13 @@ public static class PluginImpl
             resolvedSearchAbsoluteUrl,
             (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
         var items = EMMA.TestPlugin.Program.search(query, payloadJson);
-        var metadataById = ExtractSearchMetadata(payloadJson);
+        using var payloadDoc = JsonDocument.Parse(payloadJson);
+        var metadataById = new Dictionary<string, List<MetadataItem>>(PayloadMapper.ExtractSearchMetadata(payloadDoc.RootElement), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in items)
+        {
+            MergeMetadata(metadataById, FetchStatisticsMetadata(item.id));
+        }
 
         return PluginTypedExportScaffold.MapList(
             items,
@@ -132,7 +138,7 @@ public static class PluginImpl
     }
 
     private static List<IPlugin.KeyValue> BuildMetadata(
-        IReadOnlyDictionary<string, List<(string, string)>> metadataById,
+        IReadOnlyDictionary<string, List<MetadataItem>> metadataById,
         string id)
     {
         if (!metadataById.TryGetValue(id, out var metadata))
@@ -141,87 +147,71 @@ public static class PluginImpl
         }
 
         var result = new List<IPlugin.KeyValue>(metadata.Count);
-        foreach (var (key, value) in metadata)
+        foreach (var item in metadata)
         {
-            result.Add(new IPlugin.KeyValue(key, value));
+            result.Add(new IPlugin.KeyValue(item.key, item.value));
         }
 
         return result;
     }
 
-    private static IReadOnlyDictionary<string, List<(string, string)>> ExtractSearchMetadata(string payloadJson)
+    private static IReadOnlyDictionary<string, List<MetadataItem>> FetchStatisticsMetadata(
+        string mangaId)
     {
-        var metadataById = new Dictionary<string, List<(string, string)>>(StringComparer.OrdinalIgnoreCase);
+        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        }
 
+        var payloadJson = TryFetchPayload(url);
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
-            return metadataById;
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
         }
 
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            {
-                return metadataById;
-            }
-
-            foreach (var item in data.EnumerateArray())
-            {
-                if (!item.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                var id = idProp.GetString();
-                if (string.IsNullOrWhiteSpace(id))
-                {
-                    continue;
-                }
-
-                var metadata = ExtractItemMetadata(item);
-                if (metadata.Count > 0)
-                {
-                    metadataById[id] = metadata;
-                }
-            }
+            return new Dictionary<string, List<MetadataItem>>(
+                PayloadMapper.ExtractStatisticsMetadata(doc.RootElement),
+                StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
-            // Silently ignore parsing errors
+            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
         }
-
-        return metadataById;
     }
 
-    private static List<(string, string)> ExtractItemMetadata(JsonElement item)
+    private static void MergeMetadata(
+        IDictionary<string, List<MetadataItem>> target,
+        IReadOnlyDictionary<string, List<MetadataItem>> source)
     {
-        var metadata = new List<(string, string)>();
-
-        if (!item.TryGetProperty("attributes", out var attributes) || attributes.ValueKind != JsonValueKind.Object)
+        foreach (var (id, items) in source)
         {
-            return metadata;
-        }
-
-        if (attributes.TryGetProperty("contentRating", out var contentRating) && contentRating.ValueKind == JsonValueKind.String)
-        {
-            var rating = contentRating.GetString()?.Trim();
-            if (!string.IsNullOrWhiteSpace(rating))
+            if (items.Count == 0)
             {
-                metadata.Add(("Content Rating", rating));
+                continue;
             }
-        }
 
-        if (attributes.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
-        {
-            var statusValue = status.GetString()?.Trim();
-            if (!string.IsNullOrWhiteSpace(statusValue))
+            if (!target.TryGetValue(id, out var existing))
             {
-                metadata.Add(("Status", statusValue));
+                target[id] = new List<MetadataItem>(items);
+                continue;
             }
+
+            existing.AddRange(items);
+        }
+    }
+
+    private static string? TryFetchPayload(string absoluteUrl)
+    {
+        if (string.IsNullOrWhiteSpace(absoluteUrl))
+        {
+            return null;
         }
 
-        return metadata;
+        return HostBridgeInterop.OperationPayload("search", absoluteUrl);
     }
 
     public static List<IPlugin.VideoStreamItem> VideoStreams(string mediaId, string payloadJson)

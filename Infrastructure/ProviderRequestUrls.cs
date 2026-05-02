@@ -55,6 +55,40 @@ internal static class ProviderRequestUrls
         return BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
     }
 
+    public static string? BuildStatisticsAbsoluteUrl(IEnumerable<string> mangaIds)
+    {
+        var ids = mangaIds
+            .Select(id => id.Trim())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return null;
+        }
+
+        var parameters = new List<string>();
+        PluginUriUtilities.AddQueryParameters(parameters, "manga[]", ids);
+
+        return PluginUriUtilities.BuildAbsoluteUrl(
+            ProviderHttpProfile.Defaults.BaseUri,
+            "/statistics/manga",
+            parameters);
+    }
+
+    public static string? BuildStatisticsAbsoluteUrl(string mangaId)
+    {
+        if (string.IsNullOrWhiteSpace(mangaId))
+        {
+            return null;
+        }
+
+        return new Uri(
+            ProviderHttpProfile.Defaults.BaseUri,
+            $"/statistics/manga/{Uri.EscapeDataString(mangaId.Trim())}").ToString();
+    }
+
     public static string? BuildChaptersAbsoluteUrl(string mediaId, int limit, int offset)
     {
         var cappedLimit = Math.Clamp(limit, 1, 500);
@@ -116,7 +150,11 @@ internal static class ProviderRequestUrls
         {
             $"limit={pageSize}",
             $"offset={offset}",
-            "includes[]=cover_art"
+            "includes[]=cover_art",
+            "includes[]=author",
+            "includes[]=artist",
+            "includes[]=tag",
+            "includes[]=creator"
         };
 
             var contentRatings = query.GetFilterValues("core.maturity");
