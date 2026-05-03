@@ -20,16 +20,19 @@ internal sealed class CoreClient
 
         var mapStopwatch = Stopwatch.StartNew();
         var entries = PayloadMapper.ParseSearchEntries(doc.RootElement);
+        var metadataById = PayloadMapper.ExtractSearchMetadata(doc.RootElement);
         var results = new List<SearchItem>(entries.Count);
         foreach (var entry in entries)
         {
+            metadataById.TryGetValue(entry.Id, out var metadata);
             results.Add(new SearchItem(
                 entry.Id,
                 PayloadMapper.SourceId,
                 entry.Title,
                 PayloadMapper.MediaTypePaged,
                 entry.ThumbnailUrl,
-                entry.Description));
+                entry.Description,
+                metadata));
         }
 
         mapStopwatch.Stop();

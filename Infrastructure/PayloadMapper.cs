@@ -65,10 +65,7 @@ internal static class PayloadMapper
             }
 
             var metadata = ExtractSearchItemMetadata(item, includedNames);
-            if (metadata.Count > 0)
-            {
-                metadataById[id] = metadata;
-            }
+            metadataById[id] = metadata;
         }
 
         return metadataById;
@@ -468,7 +465,11 @@ internal static class PayloadMapper
             }
 
             var type = PluginJsonElement.GetString(relationship, "type");
-            if (!string.Equals(type, relationshipType, StringComparison.OrdinalIgnoreCase))
+            // Accept exact matches, and treat "creator" as an alias for
+            // "author" so creator records surface as Author metadata.
+            if (!string.Equals(type, relationshipType, StringComparison.OrdinalIgnoreCase)
+                && !(string.Equals(relationshipType, "author", StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(type, "creator", StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -479,9 +480,32 @@ internal static class PayloadMapper
                 continue;
             }
 
-            if (includedNames.TryGetValue($"{relationshipType}:{id}", out var name) && !string.IsNullOrWhiteSpace(name))
+            string? resolved = null;
+            if (includedNames.TryGetValue($"{type}:{id}", out var resolvedName) && !string.IsNullOrWhiteSpace(resolvedName))
             {
-                names.Add(name);
+                resolved = resolvedName;
+            }
+            else if (includedNames.TryGetValue($"{relationshipType}:{id}", out var resolvedName2) && !string.IsNullOrWhiteSpace(resolvedName2))
+            {
+                resolved = resolvedName2;
+            }
+            else if (relationship.TryGetProperty("attributes", out var relAttrs) && relAttrs.ValueKind == JsonValueKind.Object)
+            {
+                var rn = PluginJsonElement.GetString(relAttrs, "name")?.Trim();
+                if (string.IsNullOrWhiteSpace(rn))
+                {
+                    rn = PluginJsonElement.GetString(relAttrs, "username")?.Trim();
+                }
+
+                if (!string.IsNullOrWhiteSpace(rn))
+                {
+                    resolved = rn;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                names.Add(resolved);
             }
         }
 
@@ -525,6 +549,17 @@ internal static class PayloadMapper
             {
                 var titleMap = PluginJsonElement.GetObject(attributes.Value, "name");
                 name = PluginJsonElement.PickMapString(titleMap)?.Trim();
+            }
+
+            // Fall back to `username` for records (eg. creator) that don't expose
+            // a `name` property but do have a username field.
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                var username = PluginJsonElement.GetString(attributes.Value, "username")?.Trim();
+                if (!string.IsNullOrWhiteSpace(username))
+                {
+                    name = username;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(name))

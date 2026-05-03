@@ -46,21 +46,33 @@ public static class PluginImpl
         using var payloadDoc = JsonDocument.Parse(payloadJson);
         var metadataById = new Dictionary<string, List<MetadataItem>>(PayloadMapper.ExtractSearchMetadata(payloadDoc.RootElement), StringComparer.OrdinalIgnoreCase);
 
+        System.Console.WriteLine($"[Plugin] Extracted metadata for {metadataById.Count} items from search payload");
+
         foreach (var item in items)
         {
-            MergeMetadata(metadataById, FetchStatisticsMetadata(item.id));
+            var statsMeta = FetchStatisticsMetadata(item.id);
+            MergeMetadata(metadataById, statsMeta);
         }
+        
+        System.Console.WriteLine($"[Plugin] After statistics merge: metadata for {metadataById.Count} items");
 
-        return PluginTypedExportScaffold.MapList(
+        var results = PluginTypedExportScaffold.MapList(
             items,
-            item => new IPlugin.MediaSearchItem(
-                item.id,
-                item.source,
-                item.title,
-                item.mediaType,
-                item.thumbnailUrl,
-                item.description,
-                BuildMetadata(metadataById, item.id)));
+            item =>
+            {
+                var metadata = BuildMetadata(metadataById, item.id);
+                return new IPlugin.MediaSearchItem(
+                    item.id,
+                    item.source,
+                    item.title,
+                    item.mediaType,
+                    item.thumbnailUrl,
+                    item.description,
+                    metadata);
+            });
+        
+        System.Console.WriteLine($"[Plugin] Search returning {results.Count} items");
+        return results;
     }
 
     public static List<IPlugin.ChapterItem> Chapters(string mediaId, string payloadJson)
@@ -143,6 +155,7 @@ public static class PluginImpl
     {
         if (!metadataById.TryGetValue(id, out var metadata))
         {
+            // Silently return empty if no metadata found
             return [];
         }
 
@@ -150,6 +163,12 @@ public static class PluginImpl
         foreach (var item in metadata)
         {
             result.Add(new IPlugin.KeyValue(item.key, item.value));
+        }
+
+        // Only log if we actually have metadata (to reduce noise in logs)
+        if (result.Count > 0)
+        {
+            System.Console.WriteLine($"[Plugin] BuildMetadata for {id}: {result.Count} items");
         }
 
         return result;
@@ -164,7 +183,7 @@ public static class PluginImpl
             return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var payloadJson = TryFetchPayload(url);
+        var payloadJson = HostBridgeInterop.OperationPayload("statistics", url);
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
