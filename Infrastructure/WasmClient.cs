@@ -2,6 +2,7 @@
 using System.Net.Http;
 using System.Text.Json;
 using EMMA.Plugin.Common;
+using LibraryWorld.wit.imports.emma.plugin;
 
 namespace EMMA.TestPlugin.Infrastructure;
 
@@ -432,7 +433,10 @@ internal sealed class WasmClient
 
         try
         {
-            var payload = Http.GetStringAsync(absoluteUrl).GetAwaiter().GetResult();
+            // In WASM transport the host is responsible for network I/O; delegate
+            // to the host bridge to retrieve payloads. This avoids HttpClient
+            // failures inside the WASM sandbox.
+            var payload = HostBridgeInterop.OperationPayload("search", absoluteUrl);
             return ResolvePayloadContent(payload);
         }
         catch
