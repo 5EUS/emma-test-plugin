@@ -16,6 +16,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 {
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
+    private const int StatisticsBatchSize = 50;
 
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
@@ -50,14 +51,22 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
-        using var payloadDoc = JsonDocument.Parse(payloadJson);
-        var metadataById = new Dictionary<string, List<MetadataItem>>(PayloadMapper.ExtractSearchMetadata(payloadDoc.RootElement), StringComparer.OrdinalIgnoreCase);
+        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in parsed.Results)
         {
-            var statistics = await FetchStatisticsMetadataAsync(entry.id, cancellationToken);
-            MergeMetadata(metadataById, statistics);
+            if (entry.metadata is null || entry.metadata.Count == 0)
+            {
+                continue;
+            }
+
+            metadataById[entry.id] = new List<MetadataItem>(entry.metadata);
         }
+
+        var statisticsById = await FetchStatisticsMetadataAsync(
+            parsed.Results.Select(entry => entry.id),
+            cancellationToken);
+        MergeMetadata(metadataById, statisticsById);
 
         var results = PluginTypedExportScaffold.MapList(
             parsed.Results,
@@ -65,81 +74,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         _logger.LogInformation("Mangadex search query={Query} results={Count}", query, results.Count);
         return results;
-    }
-
-    private static IReadOnlyDictionary<string, List<MetadataItem>> ExtractSearchMetadata(string payloadJson)
-    {
-        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-
-        if (string.IsNullOrWhiteSpace(payloadJson))
-        {
-            return metadataById;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(payloadJson);
-            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            {
-                return metadataById;
-            }
-
-            foreach (var item in data.EnumerateArray())
-            {
-                if (!item.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                var id = idProp.GetString();
-                if (string.IsNullOrWhiteSpace(id))
-                {
-                    continue;
-                }
-
-                var metadata = ExtractItemMetadata(item);
-                if (metadata.Count > 0)
-                {
-                    metadataById[id] = metadata;
-                }
-            }
-        }
-        catch
-        {
-            // Silently ignore parsing errors
-        }
-
-        return metadataById;
-    }
-
-    private static List<MetadataItem> ExtractItemMetadata(JsonElement item)
-    {
-        var metadata = new List<MetadataItem>();
-
-        if (!item.TryGetProperty("attributes", out var attributes) || attributes.ValueKind != JsonValueKind.Object)
-        {
-            return metadata;
-        }
-
-        if (attributes.TryGetProperty("contentRating", out var contentRating) && contentRating.ValueKind == JsonValueKind.String)
-        {
-            var rating = contentRating.GetString()?.Trim();
-            if (!string.IsNullOrWhiteSpace(rating))
-            {
-                metadata.Add(new MetadataItem("Content Rating", rating));
-            }
-        }
-
-        if (attributes.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String)
-        {
-            var statusValue = status.GetString()?.Trim();
-            if (!string.IsNullOrWhiteSpace(statusValue))
-            {
-                metadata.Add(new MetadataItem("Status", statusValue));
-            }
-        }
-
-        return metadata;
     }
 
     private static MediaSummary BuildMediaSummary(
@@ -173,37 +107,218 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
     }
 
     private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsMetadataAsync(
-        string mangaId,
+        IEnumerable<string> mangaIds,
         CancellationToken cancellationToken)
     {
-        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
-        if (string.IsNullOrWhiteSpace(url))
+        var results = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        var ids = mangaIds
+            .Select(id => id.Trim())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (ids.Count == 0)
         {
-            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+            return results;
         }
 
-        using var response = await _httpClient.GetAsync(url, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        foreach (var batch in ids.Chunk(StatisticsBatchSize))
         {
-            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+            var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(batch);
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                foreach (var id in batch)
+                {
+                    await TryFetchSingleStatisticsAsync(id, results, cancellationToken);
+                }
+
+                continue;
+            }
+
+            var returnedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            using var response = await GetWithPolicyAsync(url, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(payloadJson))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(payloadJson);
+                        foreach (var (id, items) in PayloadMapper.ExtractStatisticsMetadata(doc.RootElement))
+                        {
+                            if (items.Count == 0)
+                            {
+                                continue;
+                            }
+
+                            returnedIds.Add(id);
+                            if (!results.TryGetValue(id, out var existing))
+                            {
+                                results[id] = new List<MetadataItem>(items);
+                                continue;
+                            }
+
+                            existing.AddRange(items);
+                        }
+                    }
+                    catch
+                    {
+                        // ignore malformed batch payload and try per-id fallback below
+                    }
+
+                    foreach (var id in batch)
+                    {
+                        if (returnedIds.Contains(id))
+                        {
+                            continue;
+                        }
+
+                        if (TryExtractRatingMetadataForId(payloadJson, id, out var ratingItem))
+                        {
+                            returnedIds.Add(id);
+                            if (!results.TryGetValue(id, out var existing))
+                            {
+                                results[id] = [ratingItem];
+                            }
+                            else
+                            {
+                                existing.Add(ratingItem);
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var id in batch)
+            {
+                if (returnedIds.Contains(id))
+                {
+                    continue;
+                }
+
+                await TryFetchSingleStatisticsAsync(id, results, cancellationToken);
+            }
         }
 
-        var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(payloadJson))
+        return results;
+    }
+
+    private async Task TryFetchSingleStatisticsAsync(
+        string mangaId,
+        IDictionary<string, List<MetadataItem>> results,
+        CancellationToken cancellationToken)
+    {
+        var singleUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
+        if (string.IsNullOrWhiteSpace(singleUrl))
         {
-            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+            return;
+        }
+
+        using var singleResponse = await GetWithPolicyAsync(singleUrl, cancellationToken);
+        if (!singleResponse.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var singlePayload = await singleResponse.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(singlePayload))
+        {
+            return;
+        }
+
+        try
+        {
+            using var singleDoc = JsonDocument.Parse(singlePayload);
+            foreach (var (singleId, items) in PayloadMapper.ExtractStatisticsMetadata(singleDoc.RootElement))
+            {
+                if (items.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!results.TryGetValue(singleId, out var existing))
+                {
+                    results[singleId] = new List<MetadataItem>(items);
+                    continue;
+                }
+
+                existing.AddRange(items);
+            }
+
+            if (TryExtractRatingMetadataForId(singlePayload, mangaId, out var ratingItem))
+            {
+                if (!results.TryGetValue(mangaId, out var existing))
+                {
+                    results[mangaId] = [ratingItem];
+                }
+                else
+                {
+                    existing.Add(ratingItem);
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool TryExtractRatingMetadataForId(string payloadJson, string mangaId, out MetadataItem ratingItem)
+    {
+        ratingItem = default!;
+        if (string.IsNullOrWhiteSpace(payloadJson) || string.IsNullOrWhiteSpace(mangaId))
+        {
+            return false;
         }
 
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            return new Dictionary<string, List<MetadataItem>>(
-                PayloadMapper.ExtractStatisticsMetadata(doc.RootElement),
-                StringComparer.OrdinalIgnoreCase);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("statistics", out var statistics)
+                || statistics.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (!statistics.TryGetProperty(mangaId, out var item)
+                || item.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (!item.TryGetProperty("rating", out var rating)
+                || rating.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            string? score = null;
+            if (rating.TryGetProperty("bayesian", out var bayesian)
+                && (bayesian.ValueKind == JsonValueKind.Number || bayesian.ValueKind == JsonValueKind.String))
+            {
+                score = bayesian.ToString().Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(score)
+                && rating.TryGetProperty("average", out var average)
+                && (average.ValueKind == JsonValueKind.Number || average.ValueKind == JsonValueKind.String))
+            {
+                score = average.ToString().Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(score))
+            {
+                return false;
+            }
+
+            ratingItem = new MetadataItem("Rating", score);
+            return true;
         }
         catch
         {
-            return new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+            return false;
         }
     }
 
