@@ -338,27 +338,33 @@ internal static class PayloadMapper
 
     private static string? GetRatingScore(JsonElement rating)
     {
+        string? raw = null;
+
         if (rating.TryGetProperty("bayesian", out var bayesian) &&
             (bayesian.ValueKind == JsonValueKind.Number || bayesian.ValueKind == JsonValueKind.String))
         {
-            var value = bayesian.ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
+            raw = bayesian.ToString().Trim();
         }
 
-        if (rating.TryGetProperty("average", out var average) &&
+        if (string.IsNullOrWhiteSpace(raw) && rating.TryGetProperty("average", out var average) &&
             (average.ValueKind == JsonValueKind.Number || average.ValueKind == JsonValueKind.String))
         {
-            var value = average.ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
+            raw = average.ToString().Trim();
         }
 
-        return null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        // Normalize numeric ratings to at-most two decimal places and trim
+        // trailing zeros (eg. 4 -> "4", 4.5 -> "4.5", 4.12345 -> "4.12").
+        if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        {
+            return value.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        return raw;
     }
 
     private static void AddLocalizedList(
@@ -494,7 +500,18 @@ internal static class PayloadMapper
                 var rn = PluginJsonElement.GetString(relAttrs, "name")?.Trim();
                 if (string.IsNullOrWhiteSpace(rn))
                 {
-                    rn = PluginJsonElement.GetString(relAttrs, "username")?.Trim();
+                    // Do not treat `username` as an author/artist name. Only
+                    // fall back to `username` for creator-like records.
+                    var allowUsernameFallback = !string.Equals(
+                        relationshipType,
+                        "author",
+                        StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(relationshipType, "artist", StringComparison.OrdinalIgnoreCase);
+
+                    if (allowUsernameFallback)
+                    {
+                        rn = PluginJsonElement.GetString(relAttrs, "username")?.Trim();
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(rn))
@@ -551,12 +568,16 @@ internal static class PayloadMapper
                 name = PluginJsonElement.PickMapString(titleMap)?.Trim();
             }
 
-            // Fall back to `username` for records (eg. creator) that don't expose
-            // a `name` property but do have a username field.
+            // Fall back to `username` for creator-like records only. Avoid
+            // using usernames for `author` or `artist` types to prevent
+            // pooling unrelated usernames as creators.
             if (string.IsNullOrWhiteSpace(name))
             {
                 var username = PluginJsonElement.GetString(attributes.Value, "username")?.Trim();
-                if (!string.IsNullOrWhiteSpace(username))
+                if (!string.IsNullOrWhiteSpace(username)
+                    && (string.Equals(type, "creator", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, "user", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, "scanlation_group", StringComparison.OrdinalIgnoreCase)))
                 {
                     name = username;
                 }
