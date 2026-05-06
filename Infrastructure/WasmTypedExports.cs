@@ -125,6 +125,11 @@ public static class PluginImpl
 
     private static string? ResolveInvokePayload(IPlugin.MediaOperationRequest request)
     {
+        if (string.Equals(request.operation, "enrich-search-metadata", StringComparison.OrdinalIgnoreCase))
+        {
+            return request.argsJson;
+        }
+
         return PluginTypedExportScaffold.ResolveInvokePayload(
             request.operation,
             request.mediaId,
@@ -205,6 +210,7 @@ public static class PluginImpl
                 var parsed = PluginSearchQuery.Parse(request.argsJson);
                 return ResolveSearchAbsoluteUrl(parsed);
             })
+            .Register("enrich-search-metadata", _ => null)
             .Register("chapters", request => ProviderRequestUrls.BuildChaptersAbsoluteUrl(request.ResolveMediaId()))
             .Register("page", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()))
             .Register("pages", request => ProviderRequestUrls.BuildAtHomeAbsoluteUrl(request.ResolveChapterId()));

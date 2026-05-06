@@ -16,7 +16,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 {
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
-    private const int StatisticsBatchSize = 50;
+    private const int StatisticsBatchSize = 150;
 
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
@@ -53,6 +53,9 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
         var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
 
+        // Include only metadata parsed from the search payload, not statistics.
+        // Statistics are loaded on-demand via EnrichMediaSummariesWithStatisticsAsync()
+        // to keep search performance fast.
         foreach (var entry in parsed.Results)
         {
             if (entry.metadata is null || entry.metadata.Count == 0)
@@ -63,17 +66,61 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             metadataById[entry.id] = new List<MetadataItem>(entry.metadata);
         }
 
-        var statisticsById = await FetchStatisticsMetadataAsync(
-            parsed.Results.Select(entry => entry.id),
-            cancellationToken);
-        MergeMetadata(metadataById, statisticsById);
-
         var results = PluginTypedExportScaffold.MapList(
             parsed.Results,
             entry => BuildMediaSummary(entry, metadataById));
 
         _logger.LogInformation("Mangadex search query={Query} results={Count}", query, results.Count);
         return results;
+    }
+
+    /// <summary>
+    /// Enriches media summaries with statistics metadata on-demand.
+    /// This is called after search results are presented to the user, not during search,
+    /// to keep search performance subsecond while still providing rich metadata when needed.
+    /// </summary>
+    /// <param name="mediaSummaries">Media summaries to enrich</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Media summaries with merged statistics metadata</returns>
+    public async Task<IReadOnlyList<MediaSummary>> EnrichMediaSummariesWithStatisticsAsync(
+        IEnumerable<MediaSummary> mediaSummaries,
+        CancellationToken cancellationToken = default)
+    {
+        var summaries = mediaSummaries?.ToList() ?? [];
+        if (summaries.Count == 0)
+        {
+            return summaries;
+        }
+
+        var statisticsById = await FetchStatisticsMetadataAsync(
+            summaries.Select(s => s.Id),
+            cancellationToken);
+
+        if (statisticsById.Count == 0)
+        {
+            return summaries;
+        }
+
+        var enriched = new List<MediaSummary>(summaries.Count);
+        foreach (var summary in summaries)
+        {
+            var enrichedSummary = summary;
+            if (statisticsById.TryGetValue(summary.Id, out var statsItems) && statsItems.Count > 0)
+            {
+                var metadata = new List<MetadataItem>();
+                if (summary.Metadata is not null)
+                {
+                    metadata.AddRange(summary.Metadata);
+                }
+
+                metadata.AddRange(statsItems);
+                enrichedSummary = summary with { Metadata = metadata };
+            }
+
+            enriched.Add(enrichedSummary);
+        }
+
+        return enriched;
     }
 
     private static MediaSummary BuildMediaSummary(

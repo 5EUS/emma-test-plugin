@@ -65,6 +65,12 @@ internal sealed class WasmPluginOperationHost
                 {
                     var query = PluginJsonArgs.GetString(request.argsJson, "query");
                     return BuildOperationJsonResult(BenchmarkNetwork([query], request.payloadJson ?? string.Empty));
+                })
+                .Register("enrich-search-metadata", request =>
+                {
+                    var enriched = _client.EnrichSearchItemsWithStatistics(request.argsJson).ToArray();
+                    return BuildOperationJsonResult(
+                        JsonSerializer.Serialize(enriched, WasmJsonContext.Default.SearchItemArray));
                 }))
             .Build();
 

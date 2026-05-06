@@ -10,41 +10,136 @@ internal sealed class WasmClient
 {
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
-    private const int StatisticsBatchSize = 50;
+    private const int StatisticsBatchSize = 150;
 
     private static readonly CoreClient Core = new();
-    private static readonly HttpClient Http = CreateHttpClient();
-
     public SearchParseMapResult SearchFromPayloadWithTimings(string payloadJson)
     {
+        // Return results quickly without fetching statistics.
+        // Metadata should be loaded on-demand via EnrichSearchItemsWithStatistics().
         var parseMap = Core.SearchFromPayloadWithTimings(payloadJson);
-        var results = parseMap.Results ?? [];
-        if (results.Count == 0)
-        {
-            return new SearchParseMapResult(results, parseMap.ParseMs, parseMap.MapMs);
-        }
+        return new SearchParseMapResult(parseMap.Results ?? [], parseMap.ParseMs, parseMap.MapMs);
+    }
 
-        // For WASM transport, enrich parsed search items with statistics
-        var enriched = new List<SearchItem>(results.Count);
-        var statisticsById = FetchStatisticsMetadata(results.Select(item => item.id));
-        foreach (var item in results)
-        {
-            // Start with any metadata parsed from the search payload
-            var metadata = item.metadata is null
-                ? new List<MetadataItem>()
-                : new List<MetadataItem>(item.metadata);
+    /// <summary>
+    /// Enriches search items with statistics metadata on-demand.
+    /// This is called after search results are presented to the user, not during search,
+    /// to keep search performance subsecond while still providing rich metadata when needed.
+    /// </summary>
+    /// <param name="enrichmentArgsJson">JSON with optional "itemIds" array and optional "baseItems" array</param>
+    /// <returns>Search items with merged statistics metadata</returns>
+    public IReadOnlyList<SearchItem> EnrichSearchItemsWithStatistics(string enrichmentArgsJson)
+    {
+        List<string> ids = [];
+        IReadOnlyList<SearchItem>? baseItems = null;
 
-            // Merge statistics fetched once for the entire result set
-            if (statisticsById.TryGetValue(item.id, out var statsItems) && statsItems.Count > 0)
+        if (!string.IsNullOrWhiteSpace(enrichmentArgsJson))
+        {
+            try
             {
-                metadata.AddRange(statsItems);
-            }
+                using var doc = JsonDocument.Parse(enrichmentArgsJson);
+                var root = doc.RootElement;
 
-            // Create a copy of the SearchItem with merged metadata when present
-            enriched.Add(item with { metadata = metadata.Count > 0 ? metadata : item.metadata });
+                // Extract itemIds array
+                if (root.TryGetProperty("itemIds", out var idsElement) && idsElement.ValueKind == JsonValueKind.Array)
+                {
+                    ids = idsElement.EnumerateArray()
+                        .Select(el => el.GetString() ?? "")
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+
+                // Extract optional baseItems array
+                if (root.TryGetProperty("baseItems", out var baseItemsElement) && baseItemsElement.ValueKind == JsonValueKind.Array)
+                {
+                    var baseItemsList = new List<SearchItem>();
+                    foreach (var item in baseItemsElement.EnumerateArray())
+                    {
+                        var id = PluginJsonElement.GetString(item, "id");
+                        var source = PluginJsonElement.GetString(item, "source");
+                        var title = PluginJsonElement.GetString(item, "title");
+                        var mediaType = PluginJsonElement.GetString(item, "mediaType");
+                        var thumbnailUrl = PluginJsonElement.GetString(item, "thumbnailUrl");
+                        var description = PluginJsonElement.GetString(item, "description");
+
+                        if (!string.IsNullOrWhiteSpace(id))
+                        {
+                            IReadOnlyList<MetadataItem>? metadata = null;
+                            if (item.TryGetProperty("metadata", out var metadataElement) && metadataElement.ValueKind == JsonValueKind.Array)
+                            {
+                                var metadataList = new List<MetadataItem>();
+                                foreach (var meta in metadataElement.EnumerateArray())
+                                {
+                                    var key = PluginJsonElement.GetString(meta, "key");
+                                    var value = PluginJsonElement.GetString(meta, "value");
+                                    if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                                    {
+                                        metadataList.Add(new MetadataItem(key, value));
+                                    }
+                                }
+                                metadata = metadataList.Count > 0 ? metadataList : null;
+                            }
+
+                            baseItemsList.Add(new SearchItem(id, source ?? "", title ?? "", mediaType ?? "", thumbnailUrl, description, metadata));
+                        }
+                    }
+                    baseItems = baseItemsList.Count > 0 ? baseItemsList : null;
+                }
+            }
+            catch
+            {
+                // If parsing fails, proceed with empty/defaults
+            }
         }
 
-        return new SearchParseMapResult(enriched, parseMap.ParseMs, parseMap.MapMs);
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var statisticsById = FetchStatisticsMetadata(ids);
+        if (statisticsById.Count == 0)
+        {
+            // No statistics fetched, return items as-is or create minimal items from IDs
+            return baseItems ?? ids.Select(id => new SearchItem(id, "", "", "", null, null, null)).ToList();
+        }
+
+        var enriched = new List<SearchItem>();
+
+        if (baseItems != null)
+        {
+            // Preserve original item data and merge statistics
+            foreach (var item in baseItems)
+            {
+                var metadata = item.metadata is null
+                    ? new List<MetadataItem>()
+                    : new List<MetadataItem>(item.metadata);
+
+                if (statisticsById.TryGetValue(item.id, out var statsItems) && statsItems.Count > 0)
+                {
+                    metadata.AddRange(statsItems);
+                }
+
+                enriched.Add(item with { metadata = metadata.Count > 0 ? metadata : item.metadata });
+            }
+        }
+        else
+        {
+            // Create items with only statistics metadata
+            foreach (var id in ids)
+            {
+                var metadata = new List<MetadataItem>();
+                if (statisticsById.TryGetValue(id, out var statsItems) && statsItems.Count > 0)
+                {
+                    metadata.AddRange(statsItems);
+                }
+
+                enriched.Add(new SearchItem(id, "", "", "", null, null, metadata.Count > 0 ? metadata : null));
+            }
+        }
+
+        return enriched;
     }
 
     public IReadOnlyList<ChapterItem> GetChaptersFromPayload(string mediaId, string payloadJson)
