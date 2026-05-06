@@ -634,7 +634,7 @@ internal static class PayloadMapper
 
     private static string[] ExtractUploaderGroups(
         JsonElement chapterItem,
-        IReadOnlyDictionary<string, string> scanlationGroupNameById)
+        Dictionary<string, string> scanlationGroupNameById)
     {
         if (!chapterItem.TryGetProperty("relationships", out var relationships)
             || relationships.ValueKind != JsonValueKind.Array)

@@ -5,7 +5,7 @@ using EMMA.Plugin.Common;
 
 namespace EMMA.TestPlugin.Infrastructure;
 
-internal static class ProviderSearchQueryResolver
+internal static partial class ProviderSearchQueryResolver
 {
     private static readonly TimeSpan TagLookupCacheTtl = TimeSpan.FromHours(1);
     private static readonly SemaphoreSlim TagLookupRefreshGate = new(1, 1);
@@ -14,9 +14,7 @@ internal static class ProviderSearchQueryResolver
     private static TagLookupCacheEntry _tagLookupCache =
         new(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), DateTimeOffset.MinValue);
 
-    private static readonly Regex UuidRegex = new(
-        "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex UuidRegex = UuidValidationRegex();
 
     private sealed record TagLookupCacheEntry(IReadOnlyDictionary<string, string> ValueByName, DateTimeOffset FetchedAtUtc);
 
@@ -310,4 +308,7 @@ internal static class ProviderSearchQueryResolver
 
         return null;
     }
+
+    [GeneratedRegex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex UuidValidationRegex();
 }

@@ -332,7 +332,7 @@ internal sealed class WasmPluginOperationHost
 
         for (var i = 0; i < iterations; i++)
         {
-            var text = $"bench:{i}:{(i * 31) % 97}";
+            var text = $"bench:{i}:{i * 31 % 97}";
             foreach (var rune in text.EnumerateRunes())
             {
                 checksum ^= rune.Value;

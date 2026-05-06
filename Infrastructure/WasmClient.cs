@@ -43,11 +43,10 @@ internal sealed class WasmClient
                 // Extract itemIds array
                 if (root.TryGetProperty("itemIds", out var idsElement) && idsElement.ValueKind == JsonValueKind.Array)
                 {
-                    ids = idsElement.EnumerateArray()
+                    ids = [.. idsElement.EnumerateArray()
                         .Select(el => el.GetString() ?? "")
                         .Where(id => !string.IsNullOrWhiteSpace(id))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
+                        .Distinct(StringComparer.OrdinalIgnoreCase)];
                 }
 
                 // Extract optional baseItems array
@@ -102,7 +101,7 @@ internal sealed class WasmClient
         if (statisticsById.Count == 0)
         {
             // No statistics fetched, return items as-is or create minimal items from IDs
-            return baseItems ?? ids.Select(id => new SearchItem(id, "", "", "", null, null, null)).ToList();
+            return baseItems ?? [.. ids.Select(id => new SearchItem(id, "", "", "", null, null, null))];
         }
 
         var enriched = new List<SearchItem>();
@@ -113,7 +112,7 @@ internal sealed class WasmClient
             foreach (var item in baseItems)
             {
                 var metadata = item.metadata is null
-                    ? new List<MetadataItem>()
+                    ? []
                     : new List<MetadataItem>(item.metadata);
 
                 if (statisticsById.TryGetValue(item.id, out var statsItems) && statsItems.Count > 0)
@@ -147,7 +146,7 @@ internal sealed class WasmClient
         return MapAllChapterPages(
             mediaId,
             payloadJson,
-            payload => Core.GetChaptersFromPayload(payload));
+            Core.GetChaptersFromPayload);
     }
 
     public IReadOnlyList<ChapterOperationItem> GetChapterOperationItemsFromPayload(string mediaId, string payloadJson)
@@ -155,7 +154,7 @@ internal sealed class WasmClient
         return MapAllChapterPages(
             mediaId,
             payloadJson,
-            payload => Core.GetChapterOperationItemsFromPayload(payload));
+            Core.GetChapterOperationItemsFromPayload);
     }
 
     public PageItem? GetPageFromPayload(string chapterId, int pageIndex, string payloadJson)
@@ -238,7 +237,7 @@ internal sealed class WasmClient
                         returnedIds.Add(id);
                         if (!results.TryGetValue(id, out var existing))
                         {
-                            results[id] = new List<MetadataItem>(items);
+                            results[id] = [.. items];
                             continue;
                         }
 
@@ -288,7 +287,7 @@ internal sealed class WasmClient
 
     private static void TryFetchSingleStatistics(
         string mangaId,
-        IDictionary<string, List<MetadataItem>> results)
+        Dictionary<string, List<MetadataItem>> results)
     {
         var singleUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
         if (string.IsNullOrWhiteSpace(singleUrl))
@@ -314,7 +313,7 @@ internal sealed class WasmClient
 
                 if (!results.TryGetValue(singleId, out var existing))
                 {
-                    results[singleId] = new List<MetadataItem>(items);
+                    results[singleId] = [.. items];
                     continue;
                 }
 

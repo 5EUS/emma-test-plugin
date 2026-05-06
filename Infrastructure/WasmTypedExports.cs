@@ -41,7 +41,7 @@ public static class PluginImpl
             payloadJson,
             "search",
             resolvedSearchAbsoluteUrl,
-            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
+            HostBridgeInterop.OperationPayload);
         var items = EMMA.TestPlugin.Program.search(query, payloadJson);
 
         var results = PluginTypedExportScaffold.MapList(
@@ -82,7 +82,7 @@ public static class PluginImpl
             payloadJson,
             "page",
             ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId),
-            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
+            HostBridgeInterop.OperationPayload);
 
         var page = EMMA.TestPlugin.Program.page(mediaId, chapterId, pageIndex, payloadJson);
         return PluginTypedExportScaffold.MapNullable(
@@ -96,7 +96,7 @@ public static class PluginImpl
             payloadJson,
             "pages",
             ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId),
-            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
+            HostBridgeInterop.OperationPayload);
 
         var pages = EMMA.TestPlugin.Program.pages(mediaId, chapterId, startIndex, count, payloadJson);
         return PluginTypedExportScaffold.MapList(
@@ -137,7 +137,7 @@ public static class PluginImpl
             request.argsJson,
             request.payloadJson,
             InvokePayloadRouter,
-            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint),
+            HostBridgeInterop.OperationPayload,
             useArgsJsonFallbackHint: true);
     }
 
@@ -230,7 +230,7 @@ public static class PluginImpl
             payloadJson,
             "chapters",
             ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, ChapterFeedPageSize, 0),
-            (operation, hint) => HostBridgeInterop.OperationPayload(operation, hint));
+            HostBridgeInterop.OperationPayload);
 
         if (string.IsNullOrWhiteSpace(firstPayload))
         {
