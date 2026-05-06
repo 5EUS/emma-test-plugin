@@ -104,17 +104,26 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         var enriched = new List<MediaSummary>(summaries.Count);
         foreach (var summary in summaries)
         {
-            var enrichedSummary = summary;
-            if (statisticsById.TryGetValue(summary.Id, out var statsItems) && statsItems.Count > 0)
+            if (!statisticsById.TryGetValue(summary.Id, out var statsItems) || statsItems.Count == 0)
             {
-                var metadata = new List<MetadataItem>();
-                if (summary.Metadata is not null)
-                {
-                    metadata.AddRange(summary.Metadata);
-                }
+                enriched.Add(summary);
+                continue;
+            }
 
-                metadata.AddRange(statsItems);
-                enrichedSummary = summary with { Metadata = metadata };
+            var enrichedSummary = new MediaSummary
+            {
+                Id = summary.Id,
+                Source = summary.Source,
+                Title = summary.Title,
+                MediaType = summary.MediaType,
+                ThumbnailUrl = summary.ThumbnailUrl,
+                Description = summary.Description
+            };
+
+            enrichedSummary.Metadata.AddRange(summary.Metadata);
+            foreach (var item in statsItems)
+            {
+                enrichedSummary.Metadata.Add(new KeyValue { Key = item.key, Value = item.value });
             }
 
             enriched.Add(enrichedSummary);
