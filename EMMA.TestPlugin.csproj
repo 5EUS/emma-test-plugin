@@ -17,8 +17,8 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEmmaSdk)' == 'true'">
-    <ProjectReference Include="..\EMMA\src\EMMA.Contracts\EMMA.Contracts.csproj" />
-    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.AspNetCore\EMMA.Plugin.AspNetCore.csproj" />
+    <ProjectReference Include="$(EmmaSdkRoot)/src/EMMA.Contracts/EMMA.Contracts.csproj" />
+    <ProjectReference Include="$(EmmaSdkRoot)/src/EMMA.Plugin.AspNetCore/EMMA.Plugin.AspNetCore.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
   </ItemGroup>

@@ -5,13 +5,15 @@
     <Nullable>enable</Nullable>
     <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == '' and '$(EMMA_SDK_VERSION)' != ''">$(EMMA_SDK_VERSION)</EmmaSdkVersion>
     <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.7</EmmaSdkVersion>
-    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and Exists('..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj')">true</UseLocalEmmaSdk>
+    <EmmaSdkRoot Condition="'$(EmmaSdkRoot)' == '' and Exists('EMMA/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj')">EMMA</EmmaSdkRoot>
+    <EmmaSdkRoot Condition="'$(EmmaSdkRoot)' == '' and Exists('../EMMA/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj')">../EMMA</EmmaSdkRoot>
+    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and '$(EmmaSdkRoot)' != ''">true</UseLocalEmmaSdk>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == ''">false</UseLocalEmmaSdk>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalEmmaSdk)' == 'true'">
-    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" />
-    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common.Generators\EMMA.Plugin.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="$(EmmaSdkRoot)/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj" />
+    <ProjectReference Include="$(EmmaSdkRoot)/src/EMMA.Plugin.Common.Generators/EMMA.Plugin.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEmmaSdk)' != 'true'">
