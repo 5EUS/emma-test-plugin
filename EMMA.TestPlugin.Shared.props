@@ -9,6 +9,7 @@
     <EmmaSdkRoot Condition="'$(EmmaSdkRoot)' == '' and Exists('../EMMA/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj')">../EMMA</EmmaSdkRoot>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and '$(EmmaSdkRoot)' != ''">true</UseLocalEmmaSdk>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == ''">false</UseLocalEmmaSdk>
+    <RestoreConfigFile Condition="'$(UseLocalEmmaSdk)' == 'true' and '$(RestoreConfigFile)' == '' and Exists('$(EmmaSdkRoot)/nuget.config')">$(EmmaSdkRoot)/nuget.config</RestoreConfigFile>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalEmmaSdk)' == 'true'">
