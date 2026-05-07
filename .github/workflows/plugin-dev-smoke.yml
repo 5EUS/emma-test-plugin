@@ -35,9 +35,29 @@ jobs:
           tar -xzf wasi-sdk.tar.gz
           mv wasi-sdk-25.0-x86_64-linux "$RUNNER_TEMP/wasi-sdk"
 
-      - name: Build native WASM runtime bridge
-        run: ./scripts/build-wasm-runtime-native.sh linux-x64
-        working-directory: EMMA
+      - name: Download prebuilt native WASM runtime bridge
+        run: |
+          set -euo pipefail
+
+          EMMA_RELEASE_TAG="v${EMMA_SDK_VERSION}"
+          EMMA_RELEASE_ASSET="emma-release_${EMMA_RELEASE_TAG}_linux-x64.zip"
+          EMMA_RELEASE_URL="https://github.com/5EUS/EMMA/releases/download/${EMMA_RELEASE_TAG}/${EMMA_RELEASE_ASSET}"
+          EMMA_RELEASE_DIR="$RUNNER_TEMP/emma-release-linux-x64"
+          EMMA_RUNTIME_SOURCE="$EMMA_RELEASE_DIR/linux-x64/wasm-runtime/linux-x64/libemma_wasm_runtime.so"
+          EMMA_RUNTIME_DEST_DIR="EMMA/artifacts/wasm-runtime-native/linux-x64"
+
+          rm -rf "$EMMA_RELEASE_DIR" "$RUNNER_TEMP/$EMMA_RELEASE_ASSET"
+          mkdir -p "$EMMA_RELEASE_DIR" "$EMMA_RUNTIME_DEST_DIR"
+
+          curl -fsSL "$EMMA_RELEASE_URL" -o "$RUNNER_TEMP/$EMMA_RELEASE_ASSET"
+          unzip -q "$RUNNER_TEMP/$EMMA_RELEASE_ASSET" -d "$EMMA_RELEASE_DIR"
+
+          if [[ ! -f "$EMMA_RUNTIME_SOURCE" ]]; then
+            echo "Expected prebuilt WASM runtime not found in release asset: $EMMA_RUNTIME_SOURCE" >&2
+            exit 1
+          fi
+
+          cp "$EMMA_RUNTIME_SOURCE" "$EMMA_RUNTIME_DEST_DIR/libemma_wasm_runtime.so"
 
       - name: Linux direct smoke
         env:
