@@ -53,9 +53,20 @@ internal sealed class WasmPluginOperationHost
 
     public WasmPluginOperationHost()
     {
-        var builder = new PluginWasmHostBuilder();
-        ConfigureDefaultOperations(builder);
-        ConfigurePagedMediaOperations(builder);
+        var builder = new PluginWasmHostBuilder()
+            .AddStandardOperations(
+                Handshake,
+                WasmJsonContext.Default.HandshakeResponse,
+                Capabilities,
+                WasmJsonContext.Default.CapabilityItemArray)
+            .AddStandardPagedCliOperations(
+                Search,
+                WasmJsonContext.Default.SearchItemArray,
+                Chapters,
+                WasmJsonContext.Default.ChapterItemArray,
+                SerializePageForCli,
+                SerializePagesForCli,
+                SerializeInvokeForCli);
         ConfigureCustomOperations(builder);
         ConfigureInvokeDispatcher(builder);
 
@@ -63,31 +74,6 @@ internal sealed class WasmPluginOperationHost
 
         _invokeDispatcher = host.InvokeDispatcher;
         _cliHandlers = host.CliHandlers;
-    }
-
-    /// <summary>
-    /// Configure mandatory plugin operations (Handshake, Capabilities).
-    /// These are always present regardless of plugin function.
-    /// </summary>
-    private void ConfigureDefaultOperations(PluginWasmHostBuilder builder)
-    {
-        builder
-            .AddCliJson(PluginOperationNames.Handshake, (_, _) => Handshake(), WasmJsonContext.Default.HandshakeResponse)
-            .AddCliJson(PluginOperationNames.Capabilities, (_, _) => Capabilities(), WasmJsonContext.Default.CapabilityItemArray);
-    }
-
-    /// <summary>
-    /// Configure paged media operations (Search, Chapters, Page, Pages).
-    /// These support the plugin's main content retrieval flow.
-    /// </summary>
-    private void ConfigurePagedMediaOperations(PluginWasmHostBuilder builder)
-    {
-        builder
-            .AddCliJson(PluginOperationNames.Search, (args, payload) => Search(args.Length > 0 ? args[0] : string.Empty, payload), WasmJsonContext.Default.SearchItemArray)
-            .AddCliJson(PluginOperationNames.Chapters, (args, payload) => Chapters(args.Length > 0 ? args[0] : string.Empty, payload), WasmJsonContext.Default.ChapterItemArray)
-            .AddCliHandler(PluginOperationNames.Page, SerializePageForCli)
-            .AddCliHandler(PluginOperationNames.Pages, SerializePagesForCli)
-            .AddCliHandler(PluginOperationNames.Invoke, SerializeInvokeForCli);
     }
 
     /// <summary>
@@ -311,7 +297,7 @@ internal sealed class WasmPluginOperationHost
         return _invokeDispatcher.Dispatch(request);
     }
 
-    private IReadOnlyList<WasmChapterOperationItem> BuildChapterOperationItems(string mediaId, string payloadJson)
+    private WasmChapterOperationItem[] BuildChapterOperationItems(string mediaId, string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(mediaId))
         {
@@ -338,7 +324,7 @@ internal sealed class WasmPluginOperationHost
                 item.id,
                 item.number,
                 item.title,
-                [.. item.uploaderGroups ?? []]));
+                [.. item.uploaderGroups ?? []])).ToArray();
     }
 
     #endregion

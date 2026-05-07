@@ -21,19 +21,12 @@ internal static class PayloadMapper
 
     public static IReadOnlyList<MangadexSearchEntry> ParseSearchEntries(JsonElement root)
     {
-        var data = GetArray(root, "data");
-        if (data is null)
-        {
-            return [];
-        }
-
-        var results = new List<MangadexSearchEntry>();
-        foreach (var item in data.Value.EnumerateArray())
+        return ParseStructArray<MangadexSearchEntry>(root, "data", item =>
         {
             var id = GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
-                continue;
+                return null;
             }
 
             var title = GetTitle(item);
@@ -42,14 +35,12 @@ internal static class PayloadMapper
                 title = "Untitled";
             }
 
-            results.Add(new MangadexSearchEntry(
+            return new MangadexSearchEntry(
                 id,
                 title,
                 BuildThumbnailUrl(item),
-                GetDescription(item)));
-        }
-
-        return results;
+                GetDescription(item));
+        });
     }
 
     public static IReadOnlyDictionary<string, List<MetadataItem>> ExtractSearchMetadata(JsonElement root)
@@ -80,50 +71,29 @@ internal static class PayloadMapper
 
     public static IReadOnlyDictionary<string, List<MetadataItem>> ExtractStatisticsMetadata(JsonElement root)
     {
-        var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-        var statistics = GetObject(root, "statistics");
-        if (statistics is null)
-        {
-            return metadataById;
-        }
-
-        foreach (var item in statistics.Value.EnumerateObject())
-        {
-            var metadata = ExtractStatisticsItemMetadata(item.Value);
-            if (metadata.Count > 0)
-            {
-                metadataById[item.Name] = metadata;
-            }
-        }
-
-        return metadataById;
+        return ParseObjectMetadataByKey(
+            root,
+            "statistics",
+            item => ExtractStatisticsItemMetadata(item.Value));
     }
 
     public static IReadOnlyList<MangadexChapterEntry> ParseChapterEntries(JsonElement root)
     {
-        var data = GetArray(root, "data");
-        if (data is null)
-        {
-            return [];
-        }
-
         var scanlationGroupNameById = BuildScanlationGroupNameById(root);
-        var results = new List<MangadexChapterEntry>();
         var index = 0;
-
-        foreach (var item in data.Value.EnumerateArray())
+        return ParseStructArray<MangadexChapterEntry>(root, "data", item =>
         {
             var id = GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
-                continue;
+                return null;
             }
 
             var attributes = GetObject(item, "attributes");
             var pages = attributes is null ? null : GetInt32(attributes.Value, "pages");
             if (pages is not null && pages <= 0)
             {
-                continue;
+                return null;
             }
 
             var title = attributes is null ? null : GetString(attributes.Value, "title");
@@ -133,11 +103,10 @@ internal static class PayloadMapper
             var formattedTitle = FormatChapterTitle(chapterText, title, number, ChapterPrefixPattern);
 
             var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);
-            results.Add(new MangadexChapterEntry(id, number, formattedTitle, uploaderGroups));
+            var result = new MangadexChapterEntry(id, number, formattedTitle, uploaderGroups);
             index++;
-        }
-
-        return results;
+            return result;
+        });
     }
 
     public static bool TryParseAtHomePayload(string payloadJson, out MangadexAtHomePayload payload)
