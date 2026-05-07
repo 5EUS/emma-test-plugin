@@ -5,153 +5,115 @@ using EMMA.Plugin.Common;
 
 namespace EMMA.TestPlugin.Infrastructure;
 
-internal static partial class ProviderSearchQueryResolver
+/// <summary>
+/// Mangadex-specific search query resolver inheriting from generic base.
+/// Handles tag catalog lookup, author/artist resolution with caching.
+/// </summary>
+internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnricher
 {
     private static readonly TimeSpan TagLookupCacheTtl = TimeSpan.FromHours(1);
     private static readonly SemaphoreSlim TagLookupRefreshGate = new(1, 1);
     private static readonly ConcurrentDictionary<string, string?> AuthorLookupCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, string?> ArtistLookupCache = new(StringComparer.OrdinalIgnoreCase);
-    private static TagLookupCacheEntry _tagLookupCache =
+    private static CatalogCacheEntry _tagLookupCache =
         new(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), DateTimeOffset.MinValue);
 
     private static readonly Regex UuidRegex = UuidValidationRegex();
 
-    private sealed record TagLookupCacheEntry(IReadOnlyDictionary<string, string> ValueByName, DateTimeOffset FetchedAtUtc);
+    /// <summary>
+    /// Singleton instance for reuse across requests.
+    /// </summary>
+    public static readonly ProviderSearchQueryResolver Instance = new();
 
-    public static async Task<PluginSearchQuery> ResolveAsync(
-        PluginSearchQuery query,
-        Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
-        CancellationToken cancellationToken)
-    {
-        if (query.Filters.Count == 0)
-        {
-            return query;
-        }
+    protected override string[] ResolvableFilterIds =>
+    [
+        "core.tags",
+        "core.tags.exclude",
+        "core.author",
+        "core.artist"
+    ];
 
-        var resolvedFilters = new List<PluginSearchFilter>(query.Filters.Count);
-        foreach (var filter in query.Filters)
-        {
-            var normalizedFilterId = filter.Id?.Trim();
-            if (string.IsNullOrWhiteSpace(normalizedFilterId))
-            {
-                continue;
-            }
+    protected override TimeSpan FilterCacheTtl => TagLookupCacheTtl;
 
-            var filterId = normalizedFilterId.ToLowerInvariant();
-            if (filter.Values.Count == 0)
-            {
-                resolvedFilters.Add(filter);
-                continue;
-            }
-
-            IReadOnlyList<string> resolvedValues;
-            if (filterId is "core.tags" or "core.tags.exclude")
-            {
-                resolvedValues = await ResolveTagValuesAsync(filter.Values, fetchAbsoluteUrlAsync, cancellationToken);
-            }
-            else if (filterId == "core.author")
-            {
-                resolvedValues = await ResolveAuthorValuesAsync(filter.Values, AuthorLookupCache, fetchAbsoluteUrlAsync, cancellationToken);
-            }
-            else if (filterId == "core.artist")
-            {
-                resolvedValues = await ResolveAuthorValuesAsync(filter.Values, ArtistLookupCache, fetchAbsoluteUrlAsync, cancellationToken);
-            }
-            else
-            {
-                resolvedValues = filter.Values;
-            }
-
-            resolvedFilters.Add(new PluginSearchFilter(normalizedFilterId, resolvedValues, filter.Operation));
-        }
-
-        return query with { Filters = resolvedFilters };
-    }
-
-    public static PluginSearchQuery Resolve(
-        PluginSearchQuery query,
-        Func<string, string?> fetchAbsoluteUrl)
-    {
-        return ResolveAsync(
-                query,
-                (absoluteUrl, _) => Task.FromResult(fetchAbsoluteUrl(absoluteUrl)),
-                CancellationToken.None)
-            .ConfigureAwait(false)
-            .GetAwaiter()
-            .GetResult();
-    }
-
-    private static async Task<IReadOnlyList<string>> ResolveTagValuesAsync(
+    protected override async Task<IReadOnlyList<string>> ResolveFilterValuesAsync(
+        string filterId,
         IReadOnlyList<string> values,
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
     {
-        var lookup = await GetTagLookupAsync(fetchAbsoluteUrlAsync, cancellationToken);
-        var resolved = new List<string>(values.Count);
-
-        foreach (var value in values)
+        return filterId switch
         {
-            var normalized = value?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
+            "core.tags" or "core.tags.exclude" => await ResolveLookupValuesAsync(
+                values,
+                ct => GetTagLookupAsync(fetchAbsoluteUrlAsync, ct),
+                fetchAbsoluteUrlAsync,
+                cancellationToken),
 
-            if (LooksLikeUuid(normalized))
-            {
-                resolved.Add(normalized);
-                continue;
-            }
+            "core.author" => await ResolveWithCacheAsync(
+                values,
+                AuthorLookupCache,
+                (name, ct) => ResolveAuthorOrArtistIdAsync(name, fetchAbsoluteUrlAsync, ct),
+                cancellationToken),
 
-            var key = normalized.ToLowerInvariant();
-            if (lookup.TryGetValue(key, out var id) && !string.IsNullOrWhiteSpace(id))
-            {
-                resolved.Add(id);
-                continue;
-            }
+            "core.artist" => await ResolveWithCacheAsync(
+                values,
+                ArtistLookupCache,
+                (name, ct) => ResolveAuthorOrArtistIdAsync(name, fetchAbsoluteUrlAsync, ct),
+                cancellationToken),
 
-            resolved.Add(normalized);
-        }
-
-        return resolved.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            _ => values
+        };
     }
 
-    private static async Task<IReadOnlyList<string>> ResolveAuthorValuesAsync(
-        IReadOnlyList<string> values,
-        ConcurrentDictionary<string, string?> cache,
-        Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
-        CancellationToken cancellationToken)
+    protected override bool LooksLikeUuid(string value)
     {
-        var resolved = new List<string>(values.Count);
-
-        foreach (var value in values)
-        {
-            var normalized = value?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                continue;
-            }
-
-            if (LooksLikeUuid(normalized))
-            {
-                resolved.Add(normalized);
-                continue;
-            }
-
-            var key = normalized.ToLowerInvariant();
-            if (!cache.TryGetValue(key, out var id))
-            {
-                id = await ResolveAuthorOrArtistIdAsync(normalized, fetchAbsoluteUrlAsync, cancellationToken);
-                cache[key] = id;
-            }
-
-            resolved.Add(string.IsNullOrWhiteSpace(id) ? normalized : id);
-        }
-
-        return resolved.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return UuidRegex.IsMatch(value);
     }
 
-    private static async Task<IReadOnlyDictionary<string, string>> GetTagLookupAsync(
+    protected override IReadOnlyDictionary<string, string> ParseCatalogResponse(string payloadJson)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        using var doc = JsonDocument.Parse(payloadJson);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object
+            || !doc.RootElement.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+        {
+            return map;
+        }
+
+        foreach (var tag in data.EnumerateArray())
+        {
+            if (tag.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var id = ReadString(tag, "id");
+            if (string.IsNullOrWhiteSpace(id)
+                || !tag.TryGetProperty("attributes", out var attributes)
+                || attributes.ValueKind != JsonValueKind.Object
+                || !attributes.TryGetProperty("name", out var names)
+                || names.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (var translation in names.EnumerateObject())
+            {
+                var normalized = translation.Value.GetString()?.Trim();
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    continue;
+                }
+
+                map[normalized.ToLowerInvariant()] = id;
+            }
+        }
+
+        return map;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> GetTagLookupAsync(
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
     {
@@ -176,50 +138,14 @@ internal static partial class ProviderSearchQueryResolver
             var payload = string.IsNullOrWhiteSpace(absoluteUrl)
                 ? null
                 : await fetchAbsoluteUrlAsync(absoluteUrl, cancellationToken);
+
             if (string.IsNullOrWhiteSpace(payload))
             {
                 return snapshot.ValueByName;
             }
 
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            using var doc = JsonDocument.Parse(payload);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object
-                || !doc.RootElement.TryGetProperty("data", out var data)
-                || data.ValueKind != JsonValueKind.Array)
-            {
-                return snapshot.ValueByName;
-            }
-
-            foreach (var tag in data.EnumerateArray())
-            {
-                if (tag.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                var id = ReadString(tag, "id");
-                if (string.IsNullOrWhiteSpace(id)
-                    || !tag.TryGetProperty("attributes", out var attributes)
-                    || attributes.ValueKind != JsonValueKind.Object
-                    || !attributes.TryGetProperty("name", out var names)
-                    || names.ValueKind != JsonValueKind.Object)
-                {
-                    continue;
-                }
-
-                foreach (var translation in names.EnumerateObject())
-                {
-                    var normalized = translation.Value.GetString()?.Trim();
-                    if (string.IsNullOrWhiteSpace(normalized))
-                    {
-                        continue;
-                    }
-
-                    map[normalized.ToLowerInvariant()] = id;
-                }
-            }
-
-            _tagLookupCache = new TagLookupCacheEntry(map, DateTimeOffset.UtcNow);
+            var map = ParseCatalogResponse(payload);
+            _tagLookupCache = new CatalogCacheEntry(map, DateTimeOffset.UtcNow);
             return _tagLookupCache.ValueByName;
         }
         catch
@@ -232,7 +158,7 @@ internal static partial class ProviderSearchQueryResolver
         }
     }
 
-    private static async Task<string?> ResolveAuthorOrArtistIdAsync(
+    private async Task<string?> ResolveAuthorOrArtistIdAsync(
         string input,
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
@@ -291,11 +217,6 @@ internal static partial class ProviderSearchQueryResolver
         }
 
         return fuzzy;
-    }
-
-    private static bool LooksLikeUuid(string value)
-    {
-        return UuidRegex.IsMatch(value);
     }
 
     private static string? ReadString(JsonElement element, string propertyName)

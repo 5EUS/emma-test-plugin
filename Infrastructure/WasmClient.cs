@@ -1,5 +1,4 @@
 #if PLUGIN_TRANSPORT_WASM
-using System.Net.Http;
 using System.Text.Json;
 using EMMA.Plugin.Common;
 using LibraryWorld.wit.imports.emma.plugin;
@@ -8,11 +7,18 @@ namespace EMMA.TestPlugin.Infrastructure;
 
 internal sealed class WasmClient
 {
+    #region Constants and Dependencies
+
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
     private const int StatisticsBatchSize = 150;
 
     private static readonly CoreClient Core = new();
+
+    #endregion
+
+    #region Public API
+
     public SearchParseMapResult SearchFromPayloadWithTimings(string payloadJson)
     {
         // Return results quickly without fetching statistics.
@@ -179,8 +185,13 @@ internal sealed class WasmClient
 
     public string? FetchSearchPayload(PluginSearchQuery query)
     {
-        var resolvedQuery = ProviderSearchQueryResolver.Resolve(query, TryFetchPayload);
-        return TryFetchPayload(ProviderRequestUrls.BuildSearchAbsoluteUrl(resolvedQuery));
+        var searchAbsoluteUrl = PluginSearchUrlResolver.ResolveSearchAbsoluteUrl(
+            query,
+            ProviderSearchQueryResolver.Instance.Resolve,
+            ProviderRequestUrls.BuildSearchAbsoluteUrl,
+            (_, payloadHint) => TryFetchPayload(payloadHint));
+
+        return TryFetchPayload(searchAbsoluteUrl);
     }
 
     public string? FetchChaptersPayload(string mediaId)
@@ -193,148 +204,79 @@ internal sealed class WasmClient
         return TryFetchPayload(ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId));
     }
 
+    #endregion
+
+    #region Statistics Metadata Helpers
+
     private IReadOnlyDictionary<string, List<MetadataItem>> FetchStatisticsMetadata(IEnumerable<string> mangaIds)
     {
-        var results = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-        var ids = mangaIds
-            .Select(id => id.Trim())
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var loader = new PluginBatchMetadataLoader<MetadataItem>(
+            new PluginBatchMetadataLoaderOptions(
+                BatchSize: StatisticsBatchSize,
+                DelayBetweenBatches: TimeSpan.Zero,
+                DelayBetweenRequests: TimeSpan.Zero));
 
-        if (ids.Count == 0)
+        return loader.Load(
+            mangaIds,
+            batch => FetchStatisticsBatchSync(batch),
+            mangaId => FetchSingleStatisticSync(mangaId));
+    }
+
+    private static IReadOnlyDictionary<string, List<MetadataItem>> FetchStatisticsBatchSync(
+        IReadOnlyList<string> mangaIds)
+    {
+        var results = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
+        var batchUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaIds);
+        if (string.IsNullOrWhiteSpace(batchUrl))
         {
             return results;
         }
 
-        foreach (var batch in ids.Chunk(StatisticsBatchSize))
+        var batchPayload = TryFetchPayload(batchUrl);
+        if (string.IsNullOrWhiteSpace(batchPayload))
         {
-            var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(batch);
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                foreach (var id in batch)
-                {
-                    TryFetchSingleStatistics(id, results);
-                }
-
-                continue;
-            }
-
-            var returnedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var payloadJson = TryFetchPayload(url);
-            if (!string.IsNullOrWhiteSpace(payloadJson))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(payloadJson);
-                    foreach (var (id, items) in PayloadMapper.ExtractStatisticsMetadata(doc.RootElement))
-                    {
-                        if (items.Count == 0)
-                        {
-                            continue;
-                        }
-
-                        returnedIds.Add(id);
-                        if (!results.TryGetValue(id, out var existing))
-                        {
-                            results[id] = [.. items];
-                            continue;
-                        }
-
-                        existing.AddRange(items);
-                    }
-                }
-                catch
-                {
-                    // ignore malformed batch payload and try per-id fallback below
-                }
-
-                foreach (var id in batch)
-                {
-                    if (returnedIds.Contains(id))
-                    {
-                        continue;
-                    }
-
-                    if (TryExtractRatingMetadataForId(payloadJson, id, out var ratingItem))
-                    {
-                        returnedIds.Add(id);
-                        if (!results.TryGetValue(id, out var existing))
-                        {
-                            results[id] = [ratingItem];
-                        }
-                        else
-                        {
-                            existing.Add(ratingItem);
-                        }
-                    }
-                }
-            }
-
-            foreach (var id in batch)
-            {
-                if (returnedIds.Contains(id))
-                {
-                    continue;
-                }
-
-                TryFetchSingleStatistics(id, results);
-            }
-        }
-
-        return results;
-    }
-
-    private static void TryFetchSingleStatistics(
-        string mangaId,
-        Dictionary<string, List<MetadataItem>> results)
-    {
-        var singleUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
-        if (string.IsNullOrWhiteSpace(singleUrl))
-        {
-            return;
-        }
-
-        var singlePayload = TryFetchPayload(singleUrl);
-        if (string.IsNullOrWhiteSpace(singlePayload))
-        {
-            return;
+            return results;
         }
 
         try
         {
-            using var singleDoc = JsonDocument.Parse(singlePayload);
-            foreach (var (singleId, items) in PayloadMapper.ExtractStatisticsMetadata(singleDoc.RootElement))
+            using var doc = JsonDocument.Parse(batchPayload);
+            foreach (var (mangaId, items) in PayloadMapper.ExtractStatisticsMetadata(doc.RootElement))
             {
-                if (items.Count == 0)
+                if (items.Count > 0)
                 {
-                    continue;
-                }
-
-                if (!results.TryGetValue(singleId, out var existing))
-                {
-                    results[singleId] = [.. items];
-                    continue;
-                }
-
-                existing.AddRange(items);
-            }
-
-            if (TryExtractRatingMetadataForId(singlePayload, mangaId, out var ratingItem))
-            {
-                if (!results.TryGetValue(mangaId, out var existing))
-                {
-                    results[mangaId] = [ratingItem];
-                }
-                else
-                {
-                    existing.Add(ratingItem);
+                    results[mangaId] = [.. items];
                 }
             }
         }
         catch
         {
+            // Batch loader will automatically fallback to per-item fetch.
         }
+
+        return results;
+    }
+
+    private static IReadOnlyList<MetadataItem> FetchSingleStatisticSync(string mangaId)
+    {
+        var singleUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
+        if (string.IsNullOrWhiteSpace(singleUrl))
+        {
+            return [];
+        }
+
+        var singlePayload = TryFetchPayload(singleUrl);
+        if (string.IsNullOrWhiteSpace(singlePayload))
+        {
+            return [];
+        }
+
+        if (TryExtractRatingMetadataForId(singlePayload, mangaId, out var ratingItem))
+        {
+            return [ratingItem];
+        }
+
+        return [];
     }
 
     private static bool TryExtractRatingMetadataForId(string payloadJson, string mangaId, out MetadataItem ratingItem)
@@ -395,6 +337,10 @@ internal sealed class WasmClient
         }
     }
 
+    #endregion
+
+    #region Pagination Helpers
+
     internal static string ResolvePayloadContent(string payload)
     {
         return CoreClient.ResolvePayloadContent(payload);
@@ -412,111 +358,29 @@ internal sealed class WasmClient
             return [];
         }
 
-        var combined = new List<TChapter>();
-        var seenChapterIds = new HashSet<string>(StringComparer.Ordinal);
-
-        AppendMappedChapters(firstNormalizedPayload, mapper, combined, seenChapterIds);
-
-        if (!TryGetChapterFeedPageStats(firstNormalizedPayload, out var firstStats))
-        {
-            return combined;
-        }
-
-        var fetchedPages = 1;
-        var nextOffset = firstStats.Offset + firstStats.DataCount;
-
-        while (fetchedPages < ChapterFeedMaxPages
-            && nextOffset < firstStats.Total
-            && !string.IsNullOrWhiteSpace(mediaId))
-        {
-            var nextPayload = TryFetchPayload(
-                ProviderRequestUrls.BuildChaptersAbsoluteUrl(
-                    mediaId,
-                    limit: ChapterFeedPageSize,
-                    offset: nextOffset));
-
-            if (string.IsNullOrWhiteSpace(nextPayload))
+        var mergedPayload = PluginWasmPagingJsonHelpers.MergeChapterFeedPages(
+            firstNormalizedPayload,
+            ChapterFeedMaxPages,
+            nextOffset =>
             {
-                break;
-            }
+                if (string.IsNullOrWhiteSpace(mediaId))
+                {
+                    return null;
+                }
 
-            AppendMappedChapters(nextPayload, mapper, combined, seenChapterIds);
+                return TryFetchPayload(
+                    ProviderRequestUrls.BuildChaptersAbsoluteUrl(
+                        mediaId,
+                        limit: ChapterFeedPageSize,
+                        offset: nextOffset));
+            });
 
-            if (!TryGetChapterFeedPageStats(nextPayload, out var nextStats) || nextStats.DataCount <= 0)
-            {
-                break;
-            }
-
-            nextOffset = nextStats.Offset + nextStats.DataCount;
-            fetchedPages++;
-        }
-
-        return combined;
+        return mapper(mergedPayload);
     }
 
-    private static void AppendMappedChapters<TChapter>(
-        string payload,
-        Func<string, IReadOnlyList<TChapter>> mapper,
-        List<TChapter> destination,
-        HashSet<string> seenChapterIds)
-        where TChapter : class
-    {
-        var mapped = mapper(payload);
-        if (mapped.Count == 0)
-        {
-            return;
-        }
+    #endregion
 
-        foreach (var chapter in mapped)
-        {
-            var chapterId = chapter switch
-            {
-                ChapterItem typed => typed.id,
-                ChapterOperationItem op => op.id,
-                _ => string.Empty
-            };
-
-            if (string.IsNullOrWhiteSpace(chapterId) || !seenChapterIds.Add(chapterId))
-            {
-                continue;
-            }
-
-            destination.Add(chapter);
-        }
-    }
-
-    private static bool TryGetChapterFeedPageStats(string payload, out ChapterFeedPageStats stats)
-    {
-        stats = default;
-
-        var normalized = ResolvePayloadContent(payload);
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(normalized);
-            var root = doc.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            var dataCount = PluginJsonElement.GetArray(root, "data")?.GetArrayLength() ?? 0;
-            var total = PluginJsonElement.GetInt32(root, "total") ?? dataCount;
-            var offset = PluginJsonElement.GetInt32(root, "offset") ?? 0;
-
-            stats = new ChapterFeedPageStats(dataCount, total, offset);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    #region Host Bridge Payload Fetch
 
     private static string? TryFetchPayload(string? absoluteUrl)
     {
@@ -530,7 +394,7 @@ internal sealed class WasmClient
             // In WASM transport the host is responsible for network I/O; delegate
             // to the host bridge to retrieve payloads. This avoids HttpClient
             // failures inside the WASM sandbox.
-            var payload = HostBridgeInterop.OperationPayload("search", absoluteUrl);
+            var payload = HostBridgeInterop.OperationPayload("search", absoluteUrl) ?? string.Empty;
             return ResolvePayloadContent(payload);
         }
         catch
@@ -539,19 +403,15 @@ internal sealed class WasmClient
         }
     }
 
-    private static HttpClient CreateHttpClient()
-    {
-        var client = new HttpClient();
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ProviderHttpProfile.Defaults.UserAgent);
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", ProviderHttpProfile.Defaults.AcceptMediaType);
-        return client;
-    }
+    #endregion
+
+    #region Result Models
 
     public readonly record struct SearchParseMapResult(
         IReadOnlyList<SearchItem> Results,
         long ParseMs,
         long MapMs);
 
-    private readonly record struct ChapterFeedPageStats(int DataCount, int Total, int Offset);
+    #endregion
 }
 #endif

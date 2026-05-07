@@ -1,20 +1,27 @@
-using System.Text.Json;
 using System.Globalization;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using EMMA.Plugin.Common;
+using static EMMA.Plugin.Common.PluginPayloadMapperBase;
 
 namespace EMMA.TestPlugin.Infrastructure;
 
+/// <summary>
+/// Mangadex-specific payload mapper.
+/// Uses reusable parsing patterns from PluginPayloadMapperBase utility class.
+/// </summary>
 internal static class PayloadMapper
 {
+    #region Constants
     public const string SourceId = "mangadex";
     public const string MediaTypePaged = "paged";
-    private static readonly Regex ChapterPrefixPattern = new(
-        @"(^|\b)chapter\s+\d+(?:\.\d+)?(\b|$)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex ChapterPrefixPattern = CreateChapterPrefixPattern();
+    #endregion
+
+    #region Public Mapping API
+
     public static IReadOnlyList<MangadexSearchEntry> ParseSearchEntries(JsonElement root)
     {
-        var data = PluginJsonElement.GetArray(root, "data");
+        var data = GetArray(root, "data");
         if (data is null)
         {
             return [];
@@ -23,7 +30,7 @@ internal static class PayloadMapper
         var results = new List<MangadexSearchEntry>();
         foreach (var item in data.Value.EnumerateArray())
         {
-            var id = PluginJsonElement.GetString(item, "id");
+            var id = GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
@@ -50,7 +57,7 @@ internal static class PayloadMapper
         var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
         var includedNames = BuildIncludedNameLookup(root);
 
-        var data = PluginJsonElement.GetArray(root, "data");
+        var data = GetArray(root, "data");
         if (data is null)
         {
             return metadataById;
@@ -58,7 +65,7 @@ internal static class PayloadMapper
 
         foreach (var item in data.Value.EnumerateArray())
         {
-            var id = PluginJsonElement.GetString(item, "id");
+            var id = GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
@@ -74,7 +81,7 @@ internal static class PayloadMapper
     public static IReadOnlyDictionary<string, List<MetadataItem>> ExtractStatisticsMetadata(JsonElement root)
     {
         var metadataById = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-        var statistics = PluginJsonElement.GetObject(root, "statistics");
+        var statistics = GetObject(root, "statistics");
         if (statistics is null)
         {
             return metadataById;
@@ -94,7 +101,7 @@ internal static class PayloadMapper
 
     public static IReadOnlyList<MangadexChapterEntry> ParseChapterEntries(JsonElement root)
     {
-        var data = PluginJsonElement.GetArray(root, "data");
+        var data = GetArray(root, "data");
         if (data is null)
         {
             return [];
@@ -106,46 +113,27 @@ internal static class PayloadMapper
 
         foreach (var item in data.Value.EnumerateArray())
         {
-            var id = PluginJsonElement.GetString(item, "id");
+            var id = GetString(item, "id");
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
             }
 
-            var attributes = PluginJsonElement.GetObject(item, "attributes");
-            var pages = attributes is null ? null : PluginJsonElement.GetInt32(attributes.Value, "pages");
+            var attributes = GetObject(item, "attributes");
+            var pages = attributes is null ? null : GetInt32(attributes.Value, "pages");
             if (pages is not null && pages <= 0)
             {
                 continue;
             }
 
-            var title = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "title");
-            var chapterText = attributes is null ? null : PluginJsonElement.GetString(attributes.Value, "chapter");
-            var number = index + 1;
-            if (!string.IsNullOrWhiteSpace(chapterText) && int.TryParse(chapterText, out var parsed))
-            {
-                number = parsed;
-            }
-            else if (!string.IsNullOrWhiteSpace(chapterText)
-                && double.TryParse(chapterText, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDecimal))
-            {
-                number = (int)Math.Truncate(parsedDecimal);
-            }
+            var title = attributes is null ? null : GetString(attributes.Value, "title");
+            var chapterText = attributes is null ? null : GetString(attributes.Value, "chapter");
+            var number = ParseChapterNumber(chapterText, index + 1);
 
-            if (string.IsNullOrWhiteSpace(title))
-            {
-                title = string.IsNullOrWhiteSpace(chapterText)
-                    ? $"Chapter {number}"
-                    : $"Chapter {chapterText}";
-            }
-            else if (!string.IsNullOrWhiteSpace(chapterText)
-                && !ChapterPrefixPattern.IsMatch(title))
-            {
-                title = $"Chapter {chapterText} · {title.Trim()}";
-            }
+            var formattedTitle = FormatChapterTitle(chapterText, title, number, ChapterPrefixPattern);
 
             var uploaderGroups = ExtractUploaderGroups(item, scanlationGroupNameById);
-            results.Add(new MangadexChapterEntry(id, number, title, uploaderGroups));
+            results.Add(new MangadexChapterEntry(id, number, formattedTitle, uploaderGroups));
             index++;
         }
 
@@ -162,19 +150,19 @@ internal static class PayloadMapper
     {
         payload = default;
 
-        var baseUrl = PluginJsonElement.GetString(root, "baseUrl");
-        var chapter = PluginJsonElement.GetObject(root, "chapter");
+        var baseUrl = GetString(root, "baseUrl");
+        var chapter = GetObject(root, "chapter");
         if (string.IsNullOrWhiteSpace(baseUrl) || chapter is null)
         {
             return false;
         }
 
-        var hash = PluginJsonElement.GetString(chapter.Value, "hash");
-        var files = PluginJsonElement.GetArray(chapter.Value, "data");
+        var hash = GetString(chapter.Value, "hash");
+        var files = GetArray(chapter.Value, "data");
         var dataPathSegment = "data";
         if (files is null || files.Value.GetArrayLength() == 0)
         {
-            files = PluginJsonElement.GetArray(chapter.Value, "dataSaver");
+            files = GetArray(chapter.Value, "dataSaver");
             dataPathSegment = "data-saver";
         }
 
@@ -183,15 +171,19 @@ internal static class PayloadMapper
             return false;
         }
 
-        var fileNames = files.Value.EnumerateArray()
-            .Select(file => file.GetString())
-            .Where(file => !string.IsNullOrWhiteSpace(file))
-            .Select(file => file!)
-            .ToList();
+        var fileNames = ExtractStringArray(files);
+        if (fileNames.Count == 0)
+        {
+            return false;
+        }
 
         payload = new MangadexAtHomePayload(baseUrl, hash, dataPathSegment, fileNames);
         return true;
     }
+
+    #endregion
+
+    #region Search Field Extractors
 
     private static string? GetTitle(JsonElement item)
     {
@@ -256,6 +248,10 @@ internal static class PayloadMapper
 
         return null;
     }
+
+    #endregion
+
+    #region Metadata Extraction Helpers
 
     private static List<MetadataItem> ExtractSearchItemMetadata(
         JsonElement item,
@@ -532,6 +528,10 @@ internal static class PayloadMapper
         }
     }
 
+    #endregion
+
+    #region Included Relationship Lookup
+
     private static Dictionary<string, string> BuildIncludedNameLookup(JsonElement root)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -693,7 +693,11 @@ internal static class PayloadMapper
 
         return [.. groups];
     }
+
+    #endregion
 }
+
+#region Payload Records
 
 internal readonly record struct MangadexSearchEntry(
     string Id,
@@ -712,3 +716,5 @@ internal readonly record struct MangadexAtHomePayload(
     string Hash,
     string DataPathSegment,
     IReadOnlyList<string> Files);
+
+#endregion

@@ -5,7 +5,7 @@
     <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.1</EmmaSdkVersion>
+    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.2</EmmaSdkVersion>
     <PluginTransport Condition="'$(PluginTransport)' == ''">AspNet</PluginTransport>
     <PluginTransport Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">Wasm</PluginTransport>
     <PluginTransport Condition="'$(PluginTransport)' == '' and '$(ExecCommand)' != ''">Wasm</PluginTransport>
@@ -29,6 +29,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'Wasm'">
+    <!-- <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" /> -->
     <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
     <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
     <PackageReference Update="Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
@@ -40,6 +41,9 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(PluginTransport)' == 'AspNet'">
+    <!-- <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" /> -->
+    <!-- <ProjectReference Include="..\EMMA\src\EMMA.Contracts\EMMA.Contracts.csproj" /> -->
+    <!-- <ProjectReference Include="..\EMMA\src\EMMA.Plugin.AspNetCore\EMMA.Plugin.AspNetCore.csproj" /> -->
     <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
     <PackageReference Include="EMMA.Contracts" Version="$(EmmaSdkVersion)" />
     <PackageReference Include="EMMA.Plugin.AspNetCore" Version="$(EmmaSdkVersion)" />

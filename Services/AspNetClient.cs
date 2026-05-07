@@ -1,19 +1,22 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Security;
 using System.Security.Authentication;
 using System.Text.Json;
+using System.Threading;
 using EMMA.Plugin.Common;
 using EMMA.Plugin.AspNetCore;
 using EMMA.Contracts.Plugins;
 using EMMA.TestPlugin.Infrastructure;
 using Microsoft.Extensions.Logging;
+using MetadataItem = EMMA.Plugin.Common.MetadataItem;
 
 namespace EMMA.TestPlugin.Services;
 
 public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> logger)
     : IPluginPagedMediaRuntime, IPluginVideoRuntime
 {
+    #region Constants and Dependencies
+
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
     private const int StatisticsBatchSize = 150;
@@ -21,22 +24,29 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<AspNetClient> _logger = logger;
-    private static readonly ConcurrentDictionary<string, CachedAtHomePayload> AtHomeCache = new();
-    private static readonly TimeSpan AtHomeCacheTtl = TimeSpan.FromMinutes(2);
-    private static readonly ConcurrentDictionary<string, CachedChapterPages> ChapterPagesCache = new();
-    private static readonly TimeSpan ChapterPagesCacheTtl = TimeSpan.FromMinutes(14);
-    private static readonly SemaphoreSlim RequestGate = new(1, 1);
-    private static readonly TimeSpan MinRequestSpacing = TimeSpan.FromMilliseconds(250);
-    private static DateTimeOffset _lastRequestStartedUtc = DateTimeOffset.MinValue;
+    
+    private readonly PluginCachedHttpClient _cachedHttpClient = new(
+        httpClient,
+        new PluginCachedHttpClientOptions(
+            CacheTtl: TimeSpan.FromMinutes(2),
+            MinRequestSpacing: TimeSpan.FromMilliseconds(250)));
+
+    private readonly PluginBatchMetadataLoader<MetadataItem> _metadataLoader = new(
+        new PluginBatchMetadataLoaderOptions(
+            BatchSize: StatisticsBatchSize,
+            DelayBetweenBatches: TimeSpan.Zero,
+            DelayBetweenRequests: TimeSpan.Zero));
+
     private static readonly HttpClient InsecureTlsHttpClient = CreateInsecureTlsHttpClient();
 
-    private readonly record struct CachedAtHomePayload(string PayloadJson, DateTimeOffset FetchedAtUtc);
-    private sealed record CachedChapterPages(IReadOnlyList<MediaPage> Pages, DateTimeOffset FetchedAtUtc);
+    #endregion
+
+    #region Search and Metadata Enrichment
 
     public async Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken)
     {
         var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
-        var resolvedQuery = await ProviderSearchQueryResolver.ResolveAsync(
+        var resolvedQuery = await ProviderSearchQueryResolver.Instance.ResolveAsync(
             parsedQuery,
             FetchProviderPayloadForResolverAsync,
             cancellationToken);
@@ -165,158 +175,103 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
     private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsMetadataAsync(
         IEnumerable<string> mangaIds,
         CancellationToken cancellationToken)
+        // GOOD PATTERN: Uses PluginBatchMetadataLoader from SDK for batch+fallback logic.
+        // This is reusable across any provider. WasmClient should follow the same pattern.
+    {
+        return await _metadataLoader.LoadAsync(
+            mangaIds,
+            FetchStatisticsBatchAsync,
+            FetchStatisticsSingleAsync,
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsBatchAsync(
+        IReadOnlyList<string> mangaIds,
+        CancellationToken cancellationToken)
     {
         var results = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-        var ids = mangaIds
-            .Select(id => id.Trim())
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (ids.Count == 0)
+        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaIds);
+        if (string.IsNullOrWhiteSpace(url))
         {
             return results;
         }
 
-        foreach (var batch in ids.Chunk(StatisticsBatchSize))
+        try
         {
-            var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(batch);
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                foreach (var id in batch)
-                {
-                    await TryFetchSingleStatisticsAsync(id, results, cancellationToken);
-                }
-
-                continue;
-            }
-
-            var returnedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             using var response = await GetWithPolicyAsync(url, cancellationToken);
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
-                if (!string.IsNullOrWhiteSpace(payloadJson))
-                {
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(payloadJson);
-                        foreach (var (id, items) in PayloadMapper.ExtractStatisticsMetadata(doc.RootElement))
-                        {
-                            if (items.Count == 0)
-                            {
-                                continue;
-                            }
-
-                            returnedIds.Add(id);
-                            if (!results.TryGetValue(id, out var existing))
-                            {
-                                results[id] = new List<MetadataItem>(items);
-                                continue;
-                            }
-
-                            existing.AddRange(items);
-                        }
-                    }
-                    catch
-                    {
-                        // ignore malformed batch payload and try per-id fallback below
-                    }
-
-                    foreach (var id in batch)
-                    {
-                        if (returnedIds.Contains(id))
-                        {
-                            continue;
-                        }
-
-                        if (TryExtractRatingMetadataForId(payloadJson, id, out var ratingItem))
-                        {
-                            returnedIds.Add(id);
-                            if (!results.TryGetValue(id, out var existing))
-                            {
-                                results[id] = [ratingItem];
-                            }
-                            else
-                            {
-                                existing.Add(ratingItem);
-                            }
-                        }
-                    }
-                }
+                return results;
             }
 
-            foreach (var id in batch)
+            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(payloadJson))
             {
-                if (returnedIds.Contains(id))
+                return results;
+            }
+
+            using var doc = JsonDocument.Parse(payloadJson);
+            var batchResults = PayloadMapper.ExtractStatisticsMetadata(doc.RootElement);
+            var returnedIds = new HashSet<string>(batchResults.Keys, StringComparer.OrdinalIgnoreCase);
+            foreach (var mangaId in mangaIds)
+            {
+                if (returnedIds.Contains(mangaId) || !TryExtractRatingMetadataForId(payloadJson, mangaId, out var ratingItem))
                 {
                     continue;
                 }
-
-                await TryFetchSingleStatisticsAsync(id, results, cancellationToken);
+                returnedIds.Add(mangaId);
+                results[mangaId] = [ratingItem];
             }
-        }
 
-        return results;
+            return batchResults.Count > 0 ? batchResults : results;
+        }
+        catch
+        {
+            return results;
+        }
     }
 
-    private async Task TryFetchSingleStatisticsAsync(
+    private async Task<IReadOnlyList<MetadataItem>> FetchStatisticsSingleAsync(
         string mangaId,
-        IDictionary<string, List<MetadataItem>> results,
         CancellationToken cancellationToken)
     {
-        var singleUrl = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
-        if (string.IsNullOrWhiteSpace(singleUrl))
+        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
+        if (string.IsNullOrWhiteSpace(url))
         {
-            return;
-        }
-
-        using var singleResponse = await GetWithPolicyAsync(singleUrl, cancellationToken);
-        if (!singleResponse.IsSuccessStatusCode)
-        {
-            return;
-        }
-
-        var singlePayload = await singleResponse.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(singlePayload))
-        {
-            return;
+            return [];
         }
 
         try
         {
-            using var singleDoc = JsonDocument.Parse(singlePayload);
-            foreach (var (singleId, items) in PayloadMapper.ExtractStatisticsMetadata(singleDoc.RootElement))
+            using var response = await GetWithPolicyAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
             {
-                if (items.Count == 0)
-                {
-                    continue;
-                }
-
-                if (!results.TryGetValue(singleId, out var existing))
-                {
-                    results[singleId] = new List<MetadataItem>(items);
-                    continue;
-                }
-
-                existing.AddRange(items);
+                return [];
             }
 
-            if (TryExtractRatingMetadataForId(singlePayload, mangaId, out var ratingItem))
+            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(payloadJson))
             {
-                if (!results.TryGetValue(mangaId, out var existing))
-                {
-                    results[mangaId] = [ratingItem];
-                }
-                else
-                {
-                    existing.Add(ratingItem);
-                }
+                return [];
             }
+
+            using var doc = JsonDocument.Parse(payloadJson);
+            var metadata = PayloadMapper.ExtractStatisticsMetadata(doc.RootElement);
+            if (metadata.TryGetValue(mangaId, out var items) && items.Count > 0)
+            {
+                return items;
+            }
+
+            if (TryExtractRatingMetadataForId(payloadJson, mangaId, out var ratingItem))
+            {
+                return [ratingItem];
+            }
+
+            return [];
         }
         catch
         {
+            return [];
         }
     }
 
@@ -417,6 +372,10 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
+
+    #endregion
+
+    #region Paged Media Runtime
 
     public async Task<IReadOnlyList<MediaChapter>> GetChaptersAsync(string mediaId, CancellationToken cancellationToken)
     {
@@ -538,6 +497,10 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         return (slice, reachedEnd);
     }
 
+    #endregion
+
+    #region Video Runtime
+
     public Task<StreamResponse> GetStreamsAsync(string mediaId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -550,16 +513,18 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         return Task.FromResult(new SegmentResponse());
     }
 
+    #endregion
+
+    #region Provider HTTP and Retry Policy
+
     private async Task<IReadOnlyList<MediaPage>> GetChapterPagesAsync(string chapterId, CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        if (ChapterPagesCache.TryGetValue(chapterId, out var cached)
-            && now - cached.FetchedAtUtc <= ChapterPagesCacheTtl)
-        {
-            return cached.Pages;
-        }
+        var cacheKey = $"chapter-pages:{chapterId}";
+        var payloadJson = await _cachedHttpClient.GetAsync(
+            cacheKey,
+            async () => await GetAtHomePayloadInternalAsync(chapterId, cancellationToken),
+            cancellationToken);
 
-        var payloadJson = await GetAtHomePayloadAsync(chapterId, cancellationToken);
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
             return [];
@@ -582,19 +547,11 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             });
         }
 
-        ChapterPagesCache[chapterId] = new CachedChapterPages(pages, DateTimeOffset.UtcNow);
         return pages;
     }
 
-    private async Task<string?> GetAtHomePayloadAsync(string chapterId, CancellationToken cancellationToken)
+    private async Task<string?> GetAtHomePayloadInternalAsync(string chapterId, CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        if (AtHomeCache.TryGetValue(chapterId, out var cached)
-            && now - cached.FetchedAtUtc <= AtHomeCacheTtl)
-        {
-            return cached.PayloadJson;
-        }
-
         var path = ProviderRequestUrls.BuildAtHomePath(chapterId);
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -602,16 +559,13 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         }
 
         using var response = await GetWithPolicyAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(payload))
+        if (!response.IsSuccessStatusCode)
         {
             return null;
         }
 
-        AtHomeCache[chapterId] = new CachedAtHomePayload(payload, DateTimeOffset.UtcNow);
-        return payload;
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(payload) ? null : payload;
     }
 
     private async Task<HttpResponseMessage> GetWithPolicyAsync(string path, CancellationToken cancellationToken)
@@ -697,6 +651,10 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         return client;
     }
 
+    private static readonly SemaphoreSlim RequestGate = new(1, 1);
+    private static DateTimeOffset _lastRequestStartedUtc = DateTimeOffset.UtcNow;
+    private static readonly TimeSpan MinRequestSpacing = TimeSpan.FromMilliseconds(250);
+
     private async Task WaitForRequestSlotAsync(CancellationToken cancellationToken)
     {
         await RequestGate.WaitAsync(cancellationToken);
@@ -727,6 +685,10 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         return TimeSpan.FromMilliseconds(400 * attempt);
     }
+
+    #endregion
+
+    #region Chapter Feed Stats Parsing
 
     private static bool TryGetChapterFeedPageStats(string payloadJson, out ChapterFeedPageStats stats)
     {
@@ -762,4 +724,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
     }
 
     private readonly record struct ChapterFeedPageStats(int DataCount, int Total, int Offset);
+
+    #endregion
 }

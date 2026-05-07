@@ -76,6 +76,31 @@ public static partial class Program
 #else
     private static readonly WasmPluginOperationHost OperationHost = new();
 
+    /// <summary>
+    /// WASM Dispatch Table Pattern
+    /// 
+    /// This dictionary maps operation names to their type-safe handler delegates.
+    /// The PluginInvokeHelper uses this table to dispatch CLI calls to the appropriate
+    /// operation method with automatic argument marshaling and type checking.
+    /// 
+    /// Pattern: Each key is an operation name (e.g., "search"), and each value is a
+    /// delegate with the correct signature for that operation (Func with specific
+    /// parameter and return types).
+    /// 
+    /// See PluginInvokeHelper.cs for how these delegates are invoked safely.
+    /// See WasmPluginOperationHost.cs for operation implementation details.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, Delegate> WasmDispatch = new Dictionary<string, Delegate>(StringComparer.Ordinal)
+    {
+        [PluginOperationNames.Handshake] = (Func<HandshakeResponse>)(() => OperationHost.Handshake()),
+        [PluginOperationNames.Capabilities] = (Func<CapabilityItem[]>)(() => OperationHost.Capabilities()),
+        [PluginOperationNames.Search] = (Func<string, string, SearchItem[]>)((query, payloadJson) => OperationHost.Search(query, payloadJson)),
+        [PluginOperationNames.Chapters] = (Func<string, string, ChapterItem[]>)((mediaId, payloadJson) => OperationHost.Chapters(mediaId, payloadJson)),
+        [PluginOperationNames.Page] = (Func<string, string, uint, string, PageItem?>)((mediaId, chapterId, pageIndex, payloadJson) => OperationHost.Page(mediaId, chapterId, pageIndex, payloadJson)),
+        [PluginOperationNames.Pages] = (Func<string, string, uint, uint, string, PageItem[]>)((mediaId, chapterId, startIndex, count, payloadJson) => OperationHost.Pages(mediaId, chapterId, startIndex, count, payloadJson)),
+        [PluginOperationNames.Invoke] = (Func<OperationRequest, OperationResult>)(request => OperationHost.Invoke(request))
+    };
+
     public static void Main(string[] args)
     {
         Environment.ExitCode = PluginWasmCliHost.Run(
@@ -84,39 +109,19 @@ public static partial class Program
             OperationHost.ExecuteOperationForCli);
     }
 
-    public static HandshakeResponse handshake()
-    {
-        return OperationHost.Handshake();
-    }
+    public static HandshakeResponse handshake() => PluginInvokeHelper.Invoke0<HandshakeResponse>(WasmDispatch, PluginOperationNames.Handshake);
 
-    public static CapabilityItem[] capabilities()
-    {
-        return OperationHost.Capabilities();
-    }
+    public static CapabilityItem[] capabilities() => PluginInvokeHelper.Invoke0<CapabilityItem[]>(WasmDispatch, PluginOperationNames.Capabilities);
 
-    public static SearchItem[] search(string query, string payloadJson)
-    {
-        return OperationHost.Search(query, payloadJson);
-    }
+    public static SearchItem[] search(string query, string payloadJson) => PluginInvokeHelper.Invoke2<string, string, SearchItem[]>(WasmDispatch, PluginOperationNames.Search, query, payloadJson);
 
-    public static ChapterItem[] chapters(string mediaId, string payloadJson)
-    {
-        return OperationHost.Chapters(mediaId, payloadJson);
-    }
+    public static ChapterItem[] chapters(string mediaId, string payloadJson) => PluginInvokeHelper.Invoke2<string, string, ChapterItem[]>(WasmDispatch, PluginOperationNames.Chapters, mediaId, payloadJson);
 
-    public static PageItem? page(string mediaId, string chapterId, uint pageIndex, string payloadJson)
-    {
-        return OperationHost.Page(mediaId, chapterId, pageIndex, payloadJson);
-    }
+    public static PageItem? page(string mediaId, string chapterId, uint pageIndex, string payloadJson) => PluginInvokeHelper.Invoke4<string, string, uint, string, PageItem?>(WasmDispatch, PluginOperationNames.Page, mediaId, chapterId, pageIndex, payloadJson);
 
-    public static PageItem[] pages(string mediaId, string chapterId, uint startIndex, uint count, string payloadJson)
-    {
-        return OperationHost.Pages(mediaId, chapterId, startIndex, count, payloadJson);
-    }
+    public static PageItem[] pages(string mediaId, string chapterId, uint startIndex, uint count, string payloadJson) => PluginInvokeHelper.Invoke5<string, string, uint, uint, string, PageItem[]>(WasmDispatch, PluginOperationNames.Pages, mediaId, chapterId, startIndex, count, payloadJson);
 
-    public static OperationResult invoke(OperationRequest request)
-    {
-        return OperationHost.Invoke(request);
-    }
+    public static OperationResult invoke(OperationRequest request) => PluginInvokeHelper.Invoke1<OperationRequest, OperationResult>(WasmDispatch, PluginOperationNames.Invoke, request);
+
 #endif
 }

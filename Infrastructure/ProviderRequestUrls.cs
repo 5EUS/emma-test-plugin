@@ -10,10 +10,13 @@ internal static class ProviderHttpProfile
         AcceptMediaType: "application/json");
 }
 
+/// <summary>
+/// URL builder facade for Mangadex API.
+/// Delegates URL construction to <see cref="MangadexProviderClient"/> to keep
+/// a single source of truth for request URL behavior.
+/// </summary>
 internal static class ProviderRequestUrls
 {
-    private static readonly IPluginProviderUrlStrategy Strategy = new MangadexUrlStrategy();
-
     public static string? BuildSearchPath(string query)
     {
         var parsed = PluginSearchQuery.Parse(query, fallbackQuery: query);
@@ -22,7 +25,7 @@ internal static class ProviderRequestUrls
 
     public static string? BuildSearchPath(PluginSearchQuery query)
     {
-        return PluginUriUtilities.ToPathAndQuery(Strategy.BuildSearchAbsoluteUrl(query));
+        return PluginUriUtilities.ToPathAndQuery(BuildSearchAbsoluteUrl(query));
     }
 
     public static string? BuildChaptersPath(string mediaId)
@@ -37,17 +40,17 @@ internal static class ProviderRequestUrls
 
     public static string? BuildAtHomePath(string chapterId)
     {
-        return Strategy.BuildAtHomePath(chapterId);
+        return PluginUriUtilities.ToPathAndQuery(BuildAtHomeAbsoluteUrl(chapterId));
     }
 
     public static string? BuildSearchAbsoluteUrl(string query)
     {
-        return Strategy.BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(query, fallbackQuery: query));
+        return BuildSearchAbsoluteUrl(PluginSearchQuery.Parse(query, fallbackQuery: query));
     }
 
     public static string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
     {
-        return Strategy.BuildSearchAbsoluteUrl(query);
+        return MangadexProviderClient.Instance.BuildSearchAbsoluteUrl(query);
     }
 
     public static string? BuildChaptersAbsoluteUrl(string mediaId)
@@ -55,173 +58,33 @@ internal static class ProviderRequestUrls
         return BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
     }
 
-    public static string? BuildStatisticsAbsoluteUrl(IEnumerable<string> mangaIds)
-    {
-        var ids = mangaIds
-            .Select(id => id.Trim())
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (ids.Count == 0)
-        {
-            return null;
-        }
-
-        var parameters = new List<string>();
-        PluginUriUtilities.AddQueryParameters(parameters, "manga[]", ids);
-
-        return PluginUriUtilities.BuildAbsoluteUrl(
-            ProviderHttpProfile.Defaults.BaseUri,
-            "/statistics/manga",
-            parameters);
-    }
-
-    public static string? BuildStatisticsAbsoluteUrl(string mangaId)
-    {
-        if (string.IsNullOrWhiteSpace(mangaId))
-        {
-            return null;
-        }
-
-        return new Uri(
-            ProviderHttpProfile.Defaults.BaseUri,
-            $"/statistics/manga/{Uri.EscapeDataString(mangaId.Trim())}").ToString();
-    }
-
     public static string? BuildChaptersAbsoluteUrl(string mediaId, int limit, int offset)
     {
-        var cappedLimit = Math.Clamp(limit, 1, 500);
-        var normalizedOffset = Math.Max(0, offset);
-
-        return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
-            baseUri: ProviderHttpProfile.Defaults.BaseUri,
-            pathTemplate: "/manga/{id}/feed",
-            id: mediaId,
-            queryParameters:
-            [
-                $"limit={cappedLimit}",
-                $"offset={normalizedOffset}",
-                "order[chapter]=asc",
-                "translatedLanguage[]=en",
-                "includeUnavailable=1",
-                "includes[]=scanlation_group"
-            ]);
+        return MangadexProviderClient.Instance.BuildChaptersAbsoluteUrl(mediaId, limit, offset);
     }
 
     public static string? BuildAtHomeAbsoluteUrl(string chapterId)
     {
-        return Strategy.BuildAtHomeAbsoluteUrl(chapterId);
+        return MangadexProviderClient.Instance.BuildAtHomeAbsoluteUrl(chapterId);
     }
 
     public static string? BuildTagCatalogAbsoluteUrl()
     {
-        return new Uri(ProviderHttpProfile.Defaults.BaseUri, "/manga/tag").ToString();
+        return MangadexProviderClient.Instance.BuildTagCatalogAbsoluteUrl();
     }
 
     public static string? BuildAuthorLookupAbsoluteUrl(string name, int limit = 10)
     {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        var cappedLimit = Math.Clamp(limit, 1, 10);
-        var query = $"name={Uri.EscapeDataString(name.Trim())}&limit={cappedLimit}";
-        return new Uri(ProviderHttpProfile.Defaults.BaseUri, $"/author?{query}").ToString();
+        return MangadexProviderClient.Instance.BuildAuthorLookupAbsoluteUrl(name, limit);
     }
 
-    private sealed class MangadexUrlStrategy : IPluginProviderUrlStrategy
+    public static string? BuildStatisticsAbsoluteUrl(IEnumerable<string> mangaIds)
     {
-        public string? BuildSearchAbsoluteUrl(PluginSearchQuery query)
-        {
-            if (string.IsNullOrWhiteSpace(query.Query)
-                && query.Filters.Count == 0
-                && query.QueryAdditions.Count == 0)
-            {
-                return null;
-            }
+        return MangadexProviderClient.Instance.BuildStatisticsAbsoluteUrl(mangaIds);
+    }
 
-            var pageSize = Math.Clamp(query.PageSize ?? 100, 1, 100);
-            var page = Math.Max(0, query.Page ?? 0);
-            var offset = page * pageSize;
-
-            var parameters = new List<string>
-        {
-            $"limit={pageSize}",
-            $"offset={offset}",
-            "includes[]=cover_art",
-            "includes[]=author",
-            "includes[]=artist",
-            "includes[]=tag",
-            "includes[]=creator"
-        };
-
-            var contentRatings = query.GetFilterValues("core.maturity");
-            if (contentRatings.Count == 0)
-            {
-                contentRatings = ["safe", "suggestive"];
-            }
-
-            PluginUriUtilities.AddQueryParameters(parameters, "contentRating[]", contentRatings);
-
-            var includedTags = query.GetFilterValues("core.tags");
-            var excludedTags = query.GetFilterValues("core.tags.exclude");
-
-            PluginUriUtilities.AddQueryParameters(parameters, "includedTags[]", includedTags);
-            PluginUriUtilities.AddQueryParameters(parameters, "excludedTags[]", excludedTags);
-            PluginUriUtilities.AddQueryParameters(parameters, "authors[]", query.GetFilterValues("core.author"));
-            PluginUriUtilities.AddQueryParameters(parameters, "artists[]", query.GetFilterValues("core.artist"));
-            PluginUriUtilities.AddQueryParameters(parameters, "status[]", query.GetFilterValues("core.status"));
-            PluginUriUtilities.AddQueryParameters(parameters, "publicationDemographic[]", query.GetFilterValues("core.demographic"));
-
-            PluginUriUtilities.AddQueryParameter(parameters, "availableTranslatedLanguage[]", query.GetQueryAddition("core.language"));
-            PluginUriUtilities.AddQueryParameter(parameters, "originalLanguage[]", query.GetQueryAddition("core.originalLanguage"));
-            PluginUriUtilities.AddQueryParameter(parameters, "year", query.GetQueryAddition("core.year"));
-
-            var includedTagMode = query.GetQueryAddition("core.tags.mode");
-            if (includedTags.Count > 0 && !string.IsNullOrWhiteSpace(includedTagMode))
-            {
-                var normalizedIncludedMode = includedTagMode.Trim().ToUpperInvariant();
-                if (normalizedIncludedMode is "AND" or "OR")
-                {
-                    PluginUriUtilities.AddQueryParameter(parameters, "includedTagsMode", normalizedIncludedMode);
-                }
-            }
-
-            var excludedTagMode = query.GetQueryAddition("core.tags.exclude.mode");
-            if (excludedTags.Count > 0 && !string.IsNullOrWhiteSpace(excludedTagMode))
-            {
-                var normalizedExcludedMode = excludedTagMode.Trim().ToUpperInvariant();
-                if (normalizedExcludedMode is "AND" or "OR")
-                {
-                    PluginUriUtilities.AddQueryParameter(parameters, "excludedTagsMode", normalizedExcludedMode);
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(query.Query))
-            {
-                PluginUriUtilities.AddQueryParameter(parameters, "title", query.Query.Trim());
-            }
-
-            return PluginUriUtilities.BuildAbsoluteUrl(
-                ProviderHttpProfile.Defaults.BaseUri,
-                "/manga",
-                parameters);
-        }
-
-        public string? BuildChaptersAbsoluteUrl(string mediaId)
-        {
-            return ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, limit: 500, offset: 0);
-        }
-
-        public string? BuildAtHomeAbsoluteUrl(string chapterId)
-        {
-            return PluginProviderUrlTemplates.BuildResourceByIdAbsoluteUrl(
-                baseUri: ProviderHttpProfile.Defaults.BaseUri,
-                pathTemplate: "/at-home/server/{id}",
-                id: chapterId,
-                queryParameters: []);
-        }
+    public static string? BuildStatisticsAbsoluteUrl(string mangaId)
+    {
+        return MangadexProviderClient.Instance.BuildStatisticsAbsoluteUrl(mangaId);
     }
 }
