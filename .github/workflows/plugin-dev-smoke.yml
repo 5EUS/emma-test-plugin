@@ -59,14 +59,19 @@ jobs:
 
           cp "$EMMA_RUNTIME_SOURCE" "$EMMA_RUNTIME_DEST_DIR/libemma_wasm_runtime.so"
 
+      - name: Restore EMMA CLI with EMMA NuGet config
+        run: |
+          set -euo pipefail
+          dotnet restore EMMA/src/EMMA.Cli/EMMA.Cli.csproj --configfile EMMA/nuget.config
+
       - name: Linux direct smoke
         env:
           EMMA_PLUGIN_DEV_CONFIG: plugin.dev.sample.json
           EMMA_PLUGIN_PROFILE: linux-dev
         run: |
           set -euo pipefail
-          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- build
-          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- scenario paged-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- build
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario paged-smoke naruto
 
       - name: WASM direct smoke
         env:
@@ -75,5 +80,5 @@ jobs:
           WASI_SDK_PATH: ${{ runner.temp }}/wasi-sdk
         run: |
           set -euo pipefail
-          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- build
-          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- scenario paged-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- build
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario paged-smoke naruto
