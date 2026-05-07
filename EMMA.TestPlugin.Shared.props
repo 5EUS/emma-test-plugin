@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.4</EmmaSdkVersion>
+    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.5</EmmaSdkVersion>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and Exists('..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj')">true</UseLocalEmmaSdk>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == ''">false</UseLocalEmmaSdk>
   </PropertyGroup>
