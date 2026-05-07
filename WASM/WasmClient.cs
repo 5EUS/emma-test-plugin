@@ -1,9 +1,9 @@
-#if PLUGIN_TRANSPORT_WASM
 using System.Text.Json;
 using EMMA.Plugin.Common;
+using EMMA.TestPlugin.Core;
 using LibraryWorld.wit.imports.emma.plugin;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.WASM;
 
 internal sealed class WasmClient
 {
@@ -414,4 +414,3 @@ internal sealed class WasmClient
 
     #endregion
 }
-#endif

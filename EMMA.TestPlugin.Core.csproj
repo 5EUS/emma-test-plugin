@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="EMMA.TestPlugin.Shared.props" />
+
+  <PropertyGroup>
+    <AssemblyName>EMMA.TestPlugin.Core</AssemblyName>
+    <RootNamespace>EMMA.TestPlugin</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Core/CoreAssemblyInfo.cs" />
+    <Compile Include="Core/CoreClient.cs" />
+    <Compile Include="Core/PayloadMapper.cs" />
+    <Compile Include="Core/ProviderRequestUrls.cs" />
+    <Compile Include="Core/ProviderSearchQueryResolver.cs" />
+    <Compile Include="WASM/MangadexProviderClient.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+{
+  "name": "audio-placeholder",
+  "displayName": "Audio Placeholder",
+  "description": "Documents the future audio scenario surface without claiming runtime support yet.",
+  "supportsQuery": false,
+  "steps": [
+    {
+      "op": "placeholder",
+      "message": "Audio media scenario support is reserved for a future runtime slice. Add audio-specific search/enrich/playback probes when an audio provider lands."
+    }
+  ]
+}

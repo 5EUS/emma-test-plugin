@@ -6,14 +6,14 @@ using System.Threading;
 using EMMA.Plugin.Common;
 using EMMA.Plugin.AspNetCore;
 using EMMA.Contracts.Plugins;
-using EMMA.TestPlugin.Infrastructure;
+using EMMA.TestPlugin.Core;
 using Microsoft.Extensions.Logging;
 using MetadataItem = EMMA.Plugin.Common.MetadataItem;
 
-namespace EMMA.TestPlugin.Services;
+namespace EMMA.TestPlugin.ASPNET;
 
 public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> logger)
-    : IPluginPagedMediaRuntime, IPluginVideoRuntime
+    : IPluginPagedMediaRuntime, IPluginSearchMetadataRuntime, IPluginVideoRuntime
 {
     #region Constants and Dependencies
 
@@ -140,6 +140,49 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         }
 
         return enriched;
+    }
+
+    public async Task<IReadOnlyList<SearchItem>> EnrichSearchItemsAsync(
+        IReadOnlyList<SearchItem> items,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        var summaries = items.Select(static item =>
+        {
+            var summary = new MediaSummary
+            {
+                Id = item.id,
+                Source = item.source,
+                Title = item.title,
+                MediaType = item.mediaType,
+                ThumbnailUrl = item.thumbnailUrl ?? string.Empty,
+                Description = item.description ?? string.Empty
+            };
+
+            if (item.metadata is not null)
+            {
+                foreach (var metadataItem in item.metadata)
+                {
+                    summary.Metadata.Add(new KeyValue { Key = metadataItem.key, Value = metadataItem.value });
+                }
+            }
+
+            return summary;
+        }).ToArray();
+
+        var enriched = await EnrichMediaSummariesWithStatisticsAsync(summaries, cancellationToken);
+        return enriched.Select(static summary => new SearchItem(
+            summary.Id,
+            summary.Source,
+            summary.Title,
+            summary.MediaType,
+            string.IsNullOrWhiteSpace(summary.ThumbnailUrl) ? null : summary.ThumbnailUrl,
+            string.IsNullOrWhiteSpace(summary.Description) ? null : summary.Description,
+            summary.Metadata.Count == 0
+                ? null
+                : summary.Metadata.Select(static item => new MetadataItem(item.Key, item.Value)).ToArray()))
+            .ToArray();
     }
 
     private static MediaSummary BuildMediaSummary(

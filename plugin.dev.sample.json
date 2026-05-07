@@ -1,0 +1,92 @@
+{
+  "defaultProfile": "wasm-dev",
+  "scenariosPath": "scenarios",
+  "profiles": {
+    "wasm-dev": {
+      "runtimeTarget": "Wasm",
+      "executionMode": "Direct",
+      "wasiSdkPath": "~/Git/wasi-sdk",
+      "sync": {
+        "enabled": true,
+        "destinationPath": "~/.local/share/com.example.emmaui/emmaui/plugins/emma.plugin.test/wasm/",
+        "onBuild": true,
+        "cleanDestination": true
+      },
+      "logging": {
+        "plugin": true,
+        "aspNetHost": false,
+        "httpClient": false
+      },
+      "watchGlobs": [
+        "Program.cs",
+        "EMMA.TestPlugin.csproj",
+        "EMMA.TestPlugin.Core.csproj",
+        "EMMA.TestPlugin.Wasm.csproj",
+        "Directory.Build.props",
+        "Directory.Build.targets",
+        "scenarios/**/*.json",
+        "Core/**/*.cs",
+        "WASM/**/*.cs",
+        "EMMA.TestPlugin.plugin.json",
+        "wit/**/*.wit",
+        "artifacts/build-wasm/**/*.wasm"
+      ]
+    },
+    "linux-dev": {
+      "runtimeTarget": "Linux",
+      "executionMode": "Direct",
+      "sync": {
+        "enabled": true,
+        "destinationPath": "~/.local/share/com.example.emmaui/emmaui/plugins/emma.plugin.test/",
+        "onBuild": true,
+        "cleanDestination": true
+      },
+      "logging": {
+        "plugin": true,
+        "aspNetHost": false,
+        "httpClient": false
+      },
+      "watchGlobs": [
+        "Program.cs",
+        "EMMA.TestPlugin.csproj",
+        "EMMA.TestPlugin.Core.csproj",
+        "EMMA.TestPlugin.Wasm.csproj",
+        "Directory.Build.props",
+        "Directory.Build.targets",
+        "scenarios/**/*.json",
+        "Core/**/*.cs",
+        "ASPNET/**/*.cs",
+        "EMMA.TestPlugin.plugin.json",
+        "artifacts/build-linux-x64/**"
+      ]
+    },
+    "windows-dev": {
+      "runtimeTarget": "Windows",
+      "executionMode": "Direct",
+      "sync": {
+        "enabled": true,
+        "destinationPath": "~/.local/share/com.example.emmaui/emmaui/plugins/emma.plugin.test/",
+        "onBuild": true,
+        "cleanDestination": true
+      },
+      "logging": {
+        "plugin": true,
+        "aspNetHost": false,
+        "httpClient": false
+      },
+      "watchGlobs": [
+        "Program.cs",
+        "EMMA.TestPlugin.csproj",
+        "EMMA.TestPlugin.Core.csproj",
+        "EMMA.TestPlugin.Wasm.csproj",
+        "Directory.Build.props",
+        "Directory.Build.targets",
+        "scenarios/**/*.json",
+        "Core/**/*.cs",
+        "ASPNET/**/*.cs",
+        "EMMA.TestPlugin.plugin.json",
+        "artifacts/build-win-x64/**"
+      ]
+    }
+  }
+}

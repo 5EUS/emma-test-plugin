@@ -86,7 +86,14 @@ jobs:
             --runtime "$ASPNET_TARGET_RID" \
             --source https://api.nuget.org/v3/index.json \
             --source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json \
-            -p:PluginTransport=AspNet \
+            -p:EmmaSdkVersion="$EMMA_SDK_VERSION"
+
+          dotnet restore EMMA.TestPlugin.Wasm.csproj \
+            --no-cache \
+            --force-evaluate \
+            --runtime wasi-wasm \
+            --source https://api.nuget.org/v3/index.json \
+            --source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json \
             -p:EmmaSdkVersion="$EMMA_SDK_VERSION"
 
           TARGETS="$ASPNET_TARGET_RID" \

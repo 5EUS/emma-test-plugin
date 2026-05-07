@@ -1,9 +1,8 @@
-#if PLUGIN_TRANSPORT_WASM
 using System.Diagnostics;
 using System.Text.Json;
 using EMMA.Plugin.Common;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.WASM;
 
 /// <summary>
 /// WASM Plugin Operation Host
@@ -17,7 +16,7 @@ namespace EMMA.TestPlugin.Infrastructure;
 ///    - ConfigureCustomOperations: Plugin-specific operations (Benchmark, BenchmarkNetwork)
 ///    - ConfigureInvokeDispatcher: Error handling and payload resolution
 /// 
-/// 2. DOMAIN LAYER (Infrastructure/CoreClient.cs):
+/// 2. DOMAIN LAYER (Core/CoreClient.cs):
 ///    - Search/Chapters/Page retrieval using the real provider API
 ///    - Shared across both ASP.NET and WASM transports
 /// 
@@ -513,4 +512,3 @@ internal sealed class WasmPluginOperationHost
     #endregion
 
 }
-#endif

@@ -1,12 +1,13 @@
 #if PLUGIN_TRANSPORT_ASPNET
 using EMMA.Plugin.Common;
 using EMMA.Plugin.AspNetCore;
-using EMMA.TestPlugin.Infrastructure;
-using EMMA.TestPlugin.Services;
+using EMMA.TestPlugin.ASPNET;
+using EMMA.TestPlugin.Core;
 using Microsoft.Extensions.DependencyInjection;
 #else
 using EMMA.Plugin.Common;
-using EMMA.TestPlugin.Infrastructure;
+using EMMA.TestPlugin.Core;
+using EMMA.TestPlugin.WASM;
 #endif
 
 namespace EMMA.TestPlugin;
@@ -49,6 +50,8 @@ public static partial class Program
                     client.DefaultRequestHeaders.UserAgent.ParseAdd(ProviderHttpProfile.Defaults.UserAgent);
                     client.DefaultRequestHeaders.Accept.ParseAdd(ProviderHttpProfile.Defaults.AcceptMediaType);
                 });
+                services.AddTransient<IPluginSearchMetadataRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
+                services.AddTransient<IPluginVideoRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
             })
             .ConfigureDefaultControl(ConfigureDefaultControlService)
                 .AddDefaultPagedProviders<AspNetClient>()

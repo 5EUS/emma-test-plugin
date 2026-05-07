@@ -8,7 +8,7 @@ MANIFEST_PATH="${1:-$PLUGIN_DIR/EMMA.TestPlugin.plugin.json}"
 OUT_DIR="$PLUGIN_DIR/artifacts"
 PACK_DIR="$OUT_DIR/pack"
 ASPNET_BUILD_CONFIGURATION="${ASPNET_BUILD_CONFIGURATION:-Release}"
-ASPNET_PROJECT_PATH="${ASPNET_PROJECT_PATH:-}"
+ASPNET_PROJECT_PATH="${ASPNET_PROJECT_PATH:-$PLUGIN_DIR/EMMA.TestPlugin.csproj}"
 EMMA_SDK_VERSION="${EMMA_SDK_VERSION:-}"
 ASPNET_NO_RESTORE="${ASPNET_NO_RESTORE:-0}"
 HOST_OS="$(uname -s)"
@@ -155,7 +155,6 @@ for TARGET in $TARGETS; do
     --self-contained false
     -p:UseAppHost=true
     -p:PublishSingleFile=true
-    -p:PluginTransport=AspNet
     -o "$PUBLISH_DIR"
   )
 

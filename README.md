@@ -3,6 +3,14 @@
 A reference implementation of the EMMA plugin SDK showing best practices for
 both ASP.NET and WASM transports with minimal example behavior (Mangadex API).
 
+The repository now uses explicit transport projects so every IDE can analyze the
+transport you opened directly instead of relying on design-time MSBuild property
+switching:
+
+- `EMMA.TestPlugin.Core.csproj`: transport-agnostic provider logic
+- `EMMA.TestPlugin.csproj`: ASP.NET host transport
+- `EMMA.TestPlugin.Wasm.csproj`: WASM transport
+
 ## Architecture Overview
 
 The plugin is organized into three distinct layers:
@@ -44,7 +52,8 @@ Key helpers:
 ## Understanding the Transport Split
 
 Check `Program.cs`: the `#if PLUGIN_TRANSPORT_ASPNET` / `#else` structure separates
-the two transports at compile time:
+the two transports at compile time, but each branch is now compiled by a fixed
+project instead of a property-switched design-time build:
 
 - ASP.NET path: Full DI, HTTP headers, gRPC server lifecycle
 - WASM path: CLI operation dispatch, JSON serialization, WIT component exports
@@ -63,6 +72,12 @@ Default port is 5005. Override with:
 
 ```bash
 dotnet run --project EMMA.TestPlugin.csproj -- --port 6001
+```
+
+Build the WASM transport with:
+
+```bash
+WASI_SDK_PATH=/path/to/wasi-sdk dotnet build EMMA.TestPlugin.Wasm.csproj
 ```
 
 ## Code Consolidation & Reusable Patterns

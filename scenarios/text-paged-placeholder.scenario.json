@@ -1,0 +1,12 @@
+{
+  "name": "text-paged-placeholder",
+  "displayName": "Text-Paged Placeholder",
+  "description": "Documents the future scenario surface for text-first paged media without pretending the runtime already supports it.",
+  "supportsQuery": false,
+  "steps": [
+    {
+      "op": "placeholder",
+      "message": "Text-based paged media scenario support is reserved for a future runtime slice. Add chapter/page probes once a text-paged provider contract exists."
+    }
+  ]
+}

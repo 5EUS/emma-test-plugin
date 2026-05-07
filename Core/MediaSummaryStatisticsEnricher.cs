@@ -1,7 +1,7 @@
 using EMMA.Plugin.Common;
 using EMMA.Contracts.Plugins;
 
-namespace EMMA.TestPlugin.Services;
+namespace EMMA.TestPlugin.Core;
 
 /// <summary>
 /// Enriches MediaSummary objects with statistics metadata on-demand.

@@ -12,7 +12,7 @@ DEFAULT_TARGETS="wasm"
 TARGETS=${TARGETS:-"$DEFAULT_TARGETS"}
 WASM_MODULE_PATH="${WASM_MODULE_PATH:-$OUT_DIR/wasm/plugin.wasm}"
 WASM_PACKAGE_FILE_NAME="${WASM_PACKAGE_FILE_NAME:-plugin.wasm}"
-WASM_PROJECT_PATH="${WASM_PROJECT_PATH:-$PLUGIN_DIR/EMMA.TestPlugin.csproj}"
+WASM_PROJECT_PATH="${WASM_PROJECT_PATH:-$PLUGIN_DIR/EMMA.TestPlugin.Wasm.csproj}"
 WASM_BUILD_CONFIGURATION="${WASM_BUILD_CONFIGURATION:-Release}"
 WASM_BUILD_RID="${WASM_BUILD_RID:-wasi-wasm}"
 WASM_BUILD_OUTPUT="${WASM_BUILD_OUTPUT:-$OUT_DIR/wasm-publish}"
@@ -184,8 +184,7 @@ build_wasm_component() {
   dotnet restore "$WASM_PROJECT_PATH" \
     --no-cache \
     --force-evaluate \
-    --runtime "$WASM_BUILD_RID" \
-    -p:PluginTransport=Wasm >/dev/null
+    --runtime "$WASM_BUILD_RID" >/dev/null
 
   if [[ "$WASM_BUILD_TOOLCHAIN" != "componentize" ]]; then
     echo "Unsupported WASM_BUILD_TOOLCHAIN '$WASM_BUILD_TOOLCHAIN'. Only 'componentize' is supported." >&2
@@ -204,7 +203,6 @@ build_wasm_component() {
     -p:DebugType=None \
     -p:DebugSymbols=false \
     -p:WasmSingleFileBundle=true \
-    -p:PluginTransport=Wasm \
     -o "$WASM_BUILD_OUTPUT" \
     2>&1 | tee "$publish_log"; then
     if grep -q "native/.*\.wasm\" because it was not found" "$publish_log" && [[ "$WASM_NATIVE_CODEGEN" == "none" ]]; then
@@ -218,7 +216,6 @@ build_wasm_component() {
         -p:DebugType=None \
         -p:DebugSymbols=false \
         -p:WasmSingleFileBundle=true \
-        -p:PluginTransport=Wasm \
         -o "$WASM_BUILD_OUTPUT"
     else
       return 1

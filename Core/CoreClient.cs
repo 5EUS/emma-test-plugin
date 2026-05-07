@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using EMMA.Plugin.Common;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.Core;
 
 internal sealed class CoreClient
 {

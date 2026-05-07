@@ -1,8 +1,7 @@
-#if PLUGIN_TRANSPORT_WASM
 using System.Text.Json.Serialization;
 using EMMA.Plugin.Common;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.WASM;
 
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(HandshakeResponse))]
@@ -27,4 +26,3 @@ internal sealed record WasmChapterOperationItem(
     int number,
     string title,
     string[] uploaderGroups);
-#endif

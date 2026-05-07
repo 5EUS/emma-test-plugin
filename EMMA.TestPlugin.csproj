@@ -1,76 +1,32 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="EMMA.TestPlugin.Shared.props" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>EMMA.TestPlugin</AssemblyName>
+    <RootNamespace>EMMA.TestPlugin</RootNamespace>
     <OutputType>Exe</OutputType>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.3</EmmaSdkVersion>
-    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and Exists('..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj')">true</UseLocalEmmaSdk>
-    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == ''">false</UseLocalEmmaSdk>
-    <PluginTransport Condition="'$(PluginTransport)' == ''">AspNet</PluginTransport>
-    <PluginTransport Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">Wasm</PluginTransport>
-    <PluginTransport Condition="'$(PluginTransport)' == '' and '$(ExecCommand)' != ''">Wasm</PluginTransport>
+    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_ASPNET</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="EMMA.TestPlugin.Core.csproj" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Core/MediaSummaryStatisticsEnricher.cs" />
+    <Compile Include="ASPNET/AspNetClient.cs" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(UseLocalEmmaSdk)' == 'true'">
-    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" />
-    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common.Generators\EMMA.Plugin.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-  </ItemGroup>
-
-  <PropertyGroup Condition="'$(PluginTransport)' == 'AspNet'">
-    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_ASPNET</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(PluginTransport)' == 'Wasm'">
-    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_WASM</DefineConstants>
-    <OutputType>Library</OutputType>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-    <UseAppHost>false</UseAppHost>
-    <PublishTrimmed>true</PublishTrimmed>
-    <SelfContained>true</SelfContained>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <DebugType>None</DebugType>
-    <DebugSymbols>false</DebugSymbols>
-    <WasmLlvmVersion>10.0.0-alpha.1.25162.1</WasmLlvmVersion>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(PluginTransport)' == 'Wasm' and '$(UseLocalEmmaSdk)' != 'true'">
-    <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
-    <PackageReference Include="EMMA.Plugin.Common.Generators" Version="$(EmmaSdkVersion)" PrivateAssets="all" />
-    <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
-    <PackageReference Update="Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
-    <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
-    <Compile Remove="Services\**\*.cs" />
-    <Wit Remove="**\*.wit" />
-    <Wit Include="wit\library.wit" World="library" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(PluginTransport)' == 'Wasm' and '$(UseLocalEmmaSdk)' == 'true'">
-    <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
-    <PackageReference Update="Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
-    <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
-    <Compile Remove="Services\**\*.cs" />
-    <Wit Remove="**\*.wit" />
-    <Wit Include="wit\library.wit" World="library" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(PluginTransport)' == 'AspNet' and '$(UseLocalEmmaSdk)' == 'true'">
     <ProjectReference Include="..\EMMA\src\EMMA.Contracts\EMMA.Contracts.csproj" />
     <ProjectReference Include="..\EMMA\src\EMMA.Plugin.AspNetCore\EMMA.Plugin.AspNetCore.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(PluginTransport)' == 'AspNet' and '$(UseLocalEmmaSdk)' != 'true'">
-    <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
-    <PackageReference Include="EMMA.Plugin.Common.Generators" Version="$(EmmaSdkVersion)" PrivateAssets="all" />
+  <ItemGroup Condition="'$(UseLocalEmmaSdk)' != 'true'">
     <PackageReference Include="EMMA.Contracts" Version="$(EmmaSdkVersion)" />
     <PackageReference Include="EMMA.Plugin.AspNetCore" Version="$(EmmaSdkVersion)" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
   </ItemGroup>
-
 </Project>

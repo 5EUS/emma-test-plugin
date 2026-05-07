@@ -1,6 +1,6 @@
 using EMMA.Plugin.Common;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.Core;
 
 internal static class ProviderHttpProfile
 {

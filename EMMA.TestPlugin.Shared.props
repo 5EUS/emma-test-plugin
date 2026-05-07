@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.3</EmmaSdkVersion>
+    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and Exists('..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj')">true</UseLocalEmmaSdk>
+    <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == ''">false</UseLocalEmmaSdk>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseLocalEmmaSdk)' == 'true'">
+    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common\EMMA.Plugin.Common.csproj" />
+    <ProjectReference Include="..\EMMA\src\EMMA.Plugin.Common.Generators\EMMA.Plugin.Common.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalEmmaSdk)' != 'true'">
+    <PackageReference Include="EMMA.Plugin.Common" Version="$(EmmaSdkVersion)" />
+    <PackageReference Include="EMMA.Plugin.Common.Generators" Version="$(EmmaSdkVersion)" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

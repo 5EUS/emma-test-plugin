@@ -1,0 +1,42 @@
+{
+  "name": "metadata-surfacing-smoke",
+  "displayName": "Metadata Surfacing Smoke",
+  "description": "Searches for a title, picks the first result, and logs surfaced metadata fields so provider mapping can be verified from the CLI or the browser UI.",
+  "defaultQuery": "naruto",
+  "queryLabel": "Metadata query",
+  "steps": [
+    {
+      "op": "search",
+      "query": "$query",
+      "save": "results"
+    },
+    {
+      "op": "requireCount",
+      "from": "$results",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$results",
+      "save": "media"
+    },
+    {
+      "op": "enrich",
+      "from": "$media",
+      "save": "media",
+      "noWarn": "overwrites_symbol"
+    },
+    {
+      "op": "log",
+      "message": "Selected {{media.title}} ({{media.id}}) from {{media.source}}"
+    },
+    {
+      "op": "log",
+      "message": "Metadata status={{media.metadata.status}} year={{media.metadata.year}} genres={{media.metadata.genres}} rating={{media.metadata.Rating}}"
+    },
+    {
+      "op": "log",
+      "message": "Statistics map={{media.metadata}}"
+    }
+  ]
+}

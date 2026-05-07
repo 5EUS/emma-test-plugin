@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EMMA.Plugin.Common;
 
-namespace EMMA.TestPlugin.Infrastructure;
+namespace EMMA.TestPlugin.Core;
 
 /// <summary>
 /// Mangadex-specific search query resolver inheriting from generic base.

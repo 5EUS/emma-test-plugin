@@ -3,8 +3,7 @@ using System.Text.Json;
 using EMMA.Plugin.Common;
 using static EMMA.Plugin.Common.PluginPayloadMapperBase;
 
-namespace EMMA.TestPlugin.Infrastructure;
-
+namespace EMMA.TestPlugin.Core;
 /// <summary>
 /// Mangadex-specific payload mapper.
 /// Uses reusable parsing patterns from PluginPayloadMapperBase utility class.

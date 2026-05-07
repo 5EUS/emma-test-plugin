@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="EMMA.TestPlugin.Shared.props" />
+
+  <PropertyGroup>
+    <AssemblyName>EMMA.TestPlugin</AssemblyName>
+    <RootNamespace>EMMA.TestPlugin</RootNamespace>
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <UseAppHost>false</UseAppHost>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <WasmLlvmVersion>10.0.0-alpha.1.25162.1</WasmLlvmVersion>
+    <DefineConstants>$(DefineConstants);PLUGIN_TRANSPORT_WASM</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="EMMA.TestPlugin.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.7.0-preview00010" />
+    <PackageReference Update="Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
+    <PackageReference Include="runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="$(WasmLlvmVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="WASM/WasmClient.cs" />
+    <Compile Include="WASM/WasmJsonContext.cs" />
+    <Compile Include="WASM/WasmPluginOperationHost.cs" />
+    <Compile Include="WASM/WasmTypedExports.cs" />
+    <Wit Include="wit/library.wit" World="library" />
+  </ItemGroup>
+</Project>

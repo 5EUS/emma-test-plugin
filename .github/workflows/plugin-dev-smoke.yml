@@ -1,0 +1,55 @@
+name: plugin-dev-smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin repo
+        uses: actions/checkout@v4
+
+      - name: Checkout EMMA
+        uses: actions/checkout@v4
+        with:
+          repository: 5EUS/EMMA
+          path: EMMA
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install WASI SDK
+        run: |
+          set -euo pipefail
+          curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-linux.tar.gz -o wasi-sdk.tar.gz
+          tar -xzf wasi-sdk.tar.gz
+          mv wasi-sdk-25.0-x86_64-linux "$RUNNER_TEMP/wasi-sdk"
+
+      - name: Build native WASM runtime bridge
+        run: ./scripts/build-wasm-runtime-native.sh linux-x64
+        working-directory: EMMA
+
+      - name: Linux direct smoke
+        env:
+          EMMA_PLUGIN_DEV_CONFIG: plugin.dev.sample.json
+          EMMA_PLUGIN_PROFILE: linux-dev
+        run: |
+          set -euo pipefail
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- build
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- scenario paged-smoke naruto
+
+      - name: WASM direct smoke
+        env:
+          EMMA_PLUGIN_DEV_CONFIG: plugin.dev.sample.json
+          EMMA_PLUGIN_PROFILE: wasm-dev
+          WASI_SDK_PATH: ${{ runner.temp }}/wasi-sdk
+        run: |
+          set -euo pipefail
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- build
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj -- scenario paged-smoke naruto

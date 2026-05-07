@@ -1,6 +1,6 @@
-#if PLUGIN_TRANSPORT_WASM
 using EMMA.Plugin.Common;
-using EMMA.TestPlugin.Infrastructure;
+using EMMA.TestPlugin.Core;
+using EMMA.TestPlugin.WASM;
 using LibraryWorld;
 using LibraryWorld.wit.exports.emma.plugin;
 using LibraryWorld.wit.imports.emma.plugin;
@@ -240,4 +240,3 @@ public static class PluginImpl
                 ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId, ChapterFeedPageSize, nextOffset)));
     }
 }
-#endif
