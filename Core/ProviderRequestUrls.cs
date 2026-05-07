@@ -6,7 +6,7 @@ internal static class ProviderHttpProfile
 {
     public static readonly PluginProviderHttpProfile Defaults = new(
         BaseUri: new Uri("https://api.mangadex.org"),
-        UserAgent: "EMMA-TestPlugin/1.0",
+        UserAgent: "EMMA-TestPlugin/1.0 (+https://github.com/5EUS/emma-test-plugin)",
         AcceptMediaType: "application/json");
 }
 

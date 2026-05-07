@@ -10,11 +10,7 @@ internal sealed class MangadexProviderClient : PluginProviderClient
 {
     private static readonly IPluginProviderUrlStrategy Strategy = new MangadexUrlStrategy();
 
-    protected override PluginProviderHttpProfile HttpProfile =>
-        new(
-            BaseUri: new Uri("https://api.mangadex.org"),
-            UserAgent: "EMMA-TestPlugin/1.0",
-            AcceptMediaType: "application/json");
+    protected override PluginProviderHttpProfile HttpProfile => ProviderHttpProfile.Defaults;
 
     public string? BuildSearchPath(PluginSearchQuery query)
     {

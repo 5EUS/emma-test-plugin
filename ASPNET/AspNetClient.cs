@@ -57,7 +57,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         }
 
         using var response = await GetWithPolicyAsync(path, cancellationToken);
-        response.EnsureSuccessStatusCode();
+    await EnsureSuccessAsync(response, "search", path, cancellationToken);
 
         var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
         var parsed = Core.SearchFromPayloadWithTimings(payloadJson);
@@ -465,7 +465,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             }
 
             using var response = await GetWithPolicyAsync(path, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessAsync(response, "chapter-feed", path, cancellationToken);
 
             var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
             var entries = Core.GetChaptersFromPayload(payloadJson);
@@ -666,6 +666,58 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         throw new InvalidOperationException("Unreachable retry path.");
     }
 
+    private async Task EnsureSuccessAsync(
+        HttpResponseMessage response,
+        string operation,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var requestId = response.Headers.TryGetValues("X-Request-ID", out var requestIds)
+            ? requestIds.FirstOrDefault()?.Trim()
+            : null;
+        var retryAfter = response.Headers.RetryAfter?.Delta;
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        var body = TrimForLog(payload, 500);
+
+        var details = new List<string>
+        {
+            $"Mangadex {operation} request failed with HTTP {(int)response.StatusCode} ({response.StatusCode}) for '{path}'."
+        };
+
+        if (!string.IsNullOrWhiteSpace(requestId))
+        {
+            details.Add($"request-id={requestId}.");
+        }
+
+        if (retryAfter is { } delay && delay > TimeSpan.Zero)
+        {
+            details.Add($"retry-after={Math.Ceiling(delay.TotalSeconds)}s.");
+        }
+
+        if (response.StatusCode == (HttpStatusCode)429)
+        {
+            details.Add("MangaDex applies IP-based rate limits; shared networks such as GitHub-hosted runners can exhaust the allowance.");
+        }
+        else if (response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            details.Add("MangaDex documents temporary shared-IP blocks after abuse or repeated rate-limit violations; GitHub-hosted runners can inherit that state.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            details.Add($"body={body}");
+        }
+
+        var message = string.Join(" ", details);
+        _logger.LogWarning("{Message}", message);
+        throw new InvalidOperationException(message);
+    }
+
     private static bool IsTlsHandshakeFailure(HttpRequestException ex)
     {
         if (ex.Message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase))
@@ -727,6 +779,19 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         }
 
         return TimeSpan.FromMilliseconds(400 * attempt);
+    }
+
+    private static string? TrimForLog(string? payload, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        var normalized = payload.Trim().Replace("\r", " ").Replace("\n", " ");
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength] + "...";
     }
 
     #endregion
