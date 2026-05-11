@@ -1,0 +1,43 @@
+{
+  "name": "enriched-rating-smoke",
+  "displayName": "Enriched Rating Smoke",
+  "description": "Searches for a title, enriches the first result, and asserts that the CLI-visible metadata includes rating data from the statistics enrichment path.",
+  "defaultQuery": "naruto",
+  "queryLabel": "Metadata query",
+  "steps": [
+    {
+      "op": "search",
+      "query": "$query",
+      "save": "results"
+    },
+    {
+      "op": "requireCount",
+      "from": "$results",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$results",
+      "save": "media"
+    },
+    {
+      "op": "enrich",
+      "from": "$media",
+      "save": "media",
+      "noWarn": "overwrites_symbol"
+    },
+    {
+      "op": "requireNotNull",
+      "value": "$media.metadata.Rating",
+      "message": "Expected enrichment to surface a Rating metadata value for the selected result."
+    },
+    {
+      "op": "log",
+      "message": "Selected {{media.title}} ({{media.id}}) with rating {{media.metadata.Rating}}"
+    },
+    {
+      "op": "log",
+      "message": "Status={{media.metadata.status}} Year={{media.metadata.year}} Genres={{media.metadata.genres}}"
+    }
+  ]
+}

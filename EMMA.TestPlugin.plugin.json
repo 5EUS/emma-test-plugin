@@ -61,7 +61,13 @@
         "appliesToMediaTypes": [
           "paged"
         ],
-        "description": "MangaDex tag UUIDs to include."
+        "description": "Search MangaDex tags by name.",
+        "lookup": {
+          "minQueryLength": 1,
+          "maxResults": 20,
+          "debounceMs": 250,
+          "allowCustomValues": true
+        }
       },
       {
         "id": "core.tags.exclude",
@@ -70,7 +76,13 @@
         "appliesToMediaTypes": [
           "paged"
         ],
-        "description": "MangaDex tag UUIDs to exclude."
+        "description": "Search MangaDex tags by name.",
+        "lookup": {
+          "minQueryLength": 1,
+          "maxResults": 20,
+          "debounceMs": 250,
+          "allowCustomValues": true
+        }
       },
       {
         "id": "core.author",
@@ -79,7 +91,13 @@
         "appliesToMediaTypes": [
           "paged"
         ],
-        "description": "MangaDex author UUIDs."
+        "description": "Search MangaDex authors by name.",
+        "lookup": {
+          "minQueryLength": 1,
+          "maxResults": 10,
+          "debounceMs": 250,
+          "allowCustomValues": true
+        }
       },
       {
         "id": "core.artist",
@@ -88,7 +106,13 @@
         "appliesToMediaTypes": [
           "paged"
         ],
-        "description": "MangaDex artist UUIDs."
+        "description": "Search MangaDex artists by name.",
+        "lookup": {
+          "minQueryLength": 1,
+          "maxResults": 10,
+          "debounceMs": 250,
+          "allowCustomValues": true
+        }
       },
       {
         "id": "core.demographic",

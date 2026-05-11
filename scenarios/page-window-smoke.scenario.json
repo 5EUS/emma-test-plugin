@@ -1,0 +1,66 @@
+{
+  "name": "page-window-smoke",
+  "displayName": "Page Window Smoke",
+  "description": "Searches for a title, selects the first chapter, fetches a small page window, and verifies that the CLI can inspect page content URIs without relying on the built-in paged-smoke shortcut.",
+  "defaultQuery": "naruto",
+  "queryLabel": "Paged query",
+  "steps": [
+    {
+      "op": "search",
+      "query": "$query",
+      "save": "results"
+    },
+    {
+      "op": "requireCount",
+      "from": "$results",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$results",
+      "save": "media"
+    },
+    {
+      "op": "chapters",
+      "mediaId": "$media.id",
+      "save": "chapters"
+    },
+    {
+      "op": "requireCount",
+      "from": "$chapters",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$chapters",
+      "save": "chapter"
+    },
+    {
+      "op": "pages",
+      "mediaId": "$media.id",
+      "chapterId": "$chapter.id",
+      "startIndex": 0,
+      "count": 3,
+      "save": "pages"
+    },
+    {
+      "op": "requireCount",
+      "from": "$pages",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$pages",
+      "save": "page"
+    },
+    {
+      "op": "requireNotNull",
+      "value": "$page.contentUri",
+      "message": "Expected the first page in the window to have a content URI."
+    },
+    {
+      "op": "log",
+      "message": "Fetched a page window for {{media.title}} / {{chapter.title}}; first page URI={{page.contentUri}}"
+    }
+  ]
+}

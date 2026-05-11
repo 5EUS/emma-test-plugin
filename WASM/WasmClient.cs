@@ -204,6 +204,31 @@ internal sealed class WasmClient
         return TryFetchPayload(ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId));
     }
 
+    public IReadOnlyList<SearchSuggestionItem> GetSearchSuggestions(string requestJson)
+    {
+        if (string.IsNullOrWhiteSpace(requestJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            var request = JsonSerializer.Deserialize(requestJson, WasmJsonContext.Default.SearchSuggestionRequest);
+            if (request is null)
+            {
+                return [];
+            }
+
+            return ProviderSearchQueryResolver.Instance.GetSuggestions(
+                request,
+                static absoluteUrl => TryFetchPayload(absoluteUrl));
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     #endregion
 
     #region Statistics Metadata Helpers

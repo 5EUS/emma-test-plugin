@@ -13,7 +13,7 @@ using MetadataItem = EMMA.Plugin.Common.MetadataItem;
 namespace EMMA.TestPlugin.ASPNET;
 
 public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> logger)
-    : IPluginPagedMediaRuntime, IPluginSearchMetadataRuntime, IPluginVideoRuntime
+    : IPluginPagedMediaRuntime, IPluginSearchMetadataRuntime, IPluginSearchSuggestionsRuntime, IPluginVideoRuntime
 {
     #region Constants and Dependencies
 
@@ -183,6 +183,16 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
                 ? null
                 : summary.Metadata.Select(static item => new MetadataItem(item.Key, item.Value)).ToArray()))
             .ToArray();
+    }
+
+    public Task<IReadOnlyList<SearchSuggestionItem>> GetSearchSuggestionsAsync(
+        SearchSuggestionRequest request,
+        CancellationToken cancellationToken)
+    {
+        return ProviderSearchQueryResolver.Instance.GetSuggestionsAsync(
+            request,
+            FetchProviderPayloadForResolverAsync,
+            cancellationToken);
     }
 
     private static MediaSummary BuildMediaSummary(

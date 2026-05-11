@@ -70,6 +70,66 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         return UuidRegex.IsMatch(value);
     }
 
+    public async Task<IReadOnlyList<SearchSuggestionItem>> GetSuggestionsAsync(
+        SearchSuggestionRequest request,
+        Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(fetchAbsoluteUrlAsync);
+
+        var limit = Math.Clamp(request.Limit ?? 20, 1, 50);
+        var excludedValues = GetExistingValues(request.SearchQuery, request.ControlId);
+
+        return request.ControlId switch
+        {
+            "core.tags" or "core.tags.exclude" => FilterTagSuggestions(
+                await GetTagLookupAsync(fetchAbsoluteUrlAsync, cancellationToken),
+                request.Query,
+                limit,
+                excludedValues),
+
+            "core.author" or "core.artist" => await GetAuthorOrArtistSuggestionsAsync(
+                request.Query,
+                limit,
+                excludedValues,
+                fetchAbsoluteUrlAsync,
+                cancellationToken),
+
+            _ => []
+        };
+    }
+
+    public IReadOnlyList<SearchSuggestionItem> GetSuggestions(
+        SearchSuggestionRequest request,
+        Func<string, string?> fetchAbsoluteUrl)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(fetchAbsoluteUrl);
+
+        var limit = Math.Clamp(request.Limit ?? 20, 1, 50);
+        var excludedValues = GetExistingValues(request.SearchQuery, request.ControlId);
+
+        return request.ControlId switch
+        {
+            "core.tags" or "core.tags.exclude" => FilterTagSuggestions(
+                GetTagLookupAsync(
+                    (absoluteUrl, cancellationToken) => Task.FromResult(fetchAbsoluteUrl(absoluteUrl)),
+                    CancellationToken.None).GetAwaiter().GetResult(),
+                request.Query,
+                limit,
+                excludedValues),
+
+            "core.author" or "core.artist" => GetAuthorOrArtistSuggestions(
+                request.Query,
+                limit,
+                excludedValues,
+                fetchAbsoluteUrl),
+
+            _ => []
+        };
+    }
+
     protected override IReadOnlyDictionary<string, string> ParseCatalogResponse(string payloadJson)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -217,6 +277,146 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         }
 
         return fuzzy;
+    }
+
+    private async Task<IReadOnlyList<SearchSuggestionItem>> GetAuthorOrArtistSuggestionsAsync(
+        string input,
+        int limit,
+        HashSet<string> excludedValues,
+        Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
+        CancellationToken cancellationToken)
+    {
+        var absoluteUrl = ProviderRequestUrls.BuildAuthorLookupAbsoluteUrl(input, limit);
+        if (string.IsNullOrWhiteSpace(absoluteUrl))
+        {
+            return [];
+        }
+
+        var payload = await fetchAbsoluteUrlAsync(absoluteUrl, cancellationToken);
+        return ParseAuthorOrArtistSuggestions(payload, input, limit, excludedValues);
+    }
+
+    private IReadOnlyList<SearchSuggestionItem> GetAuthorOrArtistSuggestions(
+        string input,
+        int limit,
+        HashSet<string> excludedValues,
+        Func<string, string?> fetchAbsoluteUrl)
+    {
+        var absoluteUrl = ProviderRequestUrls.BuildAuthorLookupAbsoluteUrl(input, limit);
+        if (string.IsNullOrWhiteSpace(absoluteUrl))
+        {
+            return [];
+        }
+
+        var payload = fetchAbsoluteUrl(absoluteUrl);
+        return ParseAuthorOrArtistSuggestions(payload, input, limit, excludedValues);
+    }
+
+    private static IReadOnlyList<SearchSuggestionItem> FilterTagSuggestions(
+        IReadOnlyDictionary<string, string> lookup,
+        string input,
+        int limit,
+        HashSet<string> excludedValues)
+    {
+        if (lookup.Count == 0)
+        {
+            return [];
+        }
+
+        var needle = input?.Trim() ?? string.Empty;
+
+        return [.. lookup
+            .OrderBy(entry => RankSuggestion(entry.Key, needle))
+            .ThenBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .Where(entry => string.IsNullOrWhiteSpace(needle)
+                || entry.Key.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .Where(entry => !excludedValues.Contains(entry.Key))
+            .Take(limit)
+            .Select(static entry => new SearchSuggestionItem(
+                entry.Key,
+                entry.Key,
+                entry.Value))];
+    }
+
+    private static IReadOnlyList<SearchSuggestionItem> ParseAuthorOrArtistSuggestions(
+        string? payloadJson,
+        string input,
+        int limit,
+        HashSet<string> excludedValues)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return [];
+        }
+
+        var suggestions = new List<SearchSuggestionItem>();
+
+        using var doc = JsonDocument.Parse(payloadJson);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object
+            || !doc.RootElement.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+        {
+            return suggestions;
+        }
+
+        foreach (var item in data.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var id = ReadString(item, "id");
+            if (!item.TryGetProperty("attributes", out var attributes)
+                || attributes.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = ReadString(attributes, "name");
+            if (string.IsNullOrWhiteSpace(id)
+                || string.IsNullOrWhiteSpace(name)
+                || excludedValues.Contains(name))
+            {
+                continue;
+            }
+
+            suggestions.Add(new SearchSuggestionItem(name, name, id));
+        }
+
+        var needle = input?.Trim() ?? string.Empty;
+        return [.. suggestions
+            .DistinctBy(static suggestion => suggestion.Value, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(suggestion => RankSuggestion(suggestion.Label, needle))
+            .ThenBy(static suggestion => suggestion.Label, StringComparer.OrdinalIgnoreCase)
+            .Take(limit)];
+    }
+
+    private static HashSet<string> GetExistingValues(PluginSearchQuery? searchQuery, string controlId)
+    {
+        return searchQuery?.GetFilterValues(controlId) is { Count: > 0 } existing
+            ? new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static int RankSuggestion(string candidate, string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return 2;
+        }
+
+        if (string.Equals(candidate, input, StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (candidate.StartsWith(input, StringComparison.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        return 2;
     }
 
     private static string? ReadString(JsonElement element, string propertyName)

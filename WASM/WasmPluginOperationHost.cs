@@ -136,6 +136,12 @@ internal sealed class WasmPluginOperationHost
                 var enriched = _client.EnrichSearchItemsWithStatistics(request.argsJson ?? string.Empty).ToArray();
                 return BuildOperationJsonResult(
                     JsonSerializer.Serialize(enriched, WasmJsonContext.Default.SearchItemArray));
+            })
+            .Register("search-suggestions", request =>
+            {
+                var suggestions = _client.GetSearchSuggestions(request.argsJson ?? string.Empty).ToArray();
+                return BuildOperationJsonResult(
+                    JsonSerializer.Serialize(suggestions, WasmJsonContext.Default.SearchSuggestionItemArray));
             }));
     }
 

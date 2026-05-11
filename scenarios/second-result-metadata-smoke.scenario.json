@@ -1,0 +1,39 @@
+{
+  "name": "second-result-metadata-smoke",
+  "displayName": "Second Result Metadata Smoke",
+  "description": "Uses selectAt to inspect a non-first search result, then enriches it so CLI scenario coverage exercises list indexing as well as metadata surfacing.",
+  "defaultQuery": "one piece",
+  "queryLabel": "Search query",
+  "steps": [
+    {
+      "op": "search",
+      "query": "$query",
+      "save": "results"
+    },
+    {
+      "op": "requireCount",
+      "from": "$results",
+      "min": 2
+    },
+    {
+      "op": "selectAt",
+      "from": "$results",
+      "index": 1,
+      "save": "media"
+    },
+    {
+      "op": "enrich",
+      "from": "$media",
+      "save": "media",
+      "noWarn": "overwrites_symbol"
+    },
+    {
+      "op": "log",
+      "message": "Selected second result {{media.title}} ({{media.id}})"
+    },
+    {
+      "op": "log",
+      "message": "Source={{media.source}} Status={{media.metadata.status}} Rating={{media.metadata.Rating}}"
+    }
+  ]
+}

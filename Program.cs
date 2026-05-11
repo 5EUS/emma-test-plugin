@@ -51,6 +51,7 @@ public static partial class Program
                     client.DefaultRequestHeaders.Accept.ParseAdd(ProviderHttpProfile.Defaults.AcceptMediaType);
                 });
                 services.AddTransient<IPluginSearchMetadataRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
+                services.AddTransient<IPluginSearchSuggestionsRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
                 services.AddTransient<IPluginVideoRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
             })
             .ConfigureDefaultControl(ConfigureDefaultControlService)
