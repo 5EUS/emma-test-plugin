@@ -19,9 +19,11 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
+    private static readonly PluginProviderBundle<MangadexProviderClient, ProviderSearchQueryResolver, MangadexSearchSuggestionProvider> Provider = MangadexPluginBundle.Instance;
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<AspNetClient> _logger = logger;
+    private PluginPayloadSource? _payloadSource;
     
     private readonly PluginCachedHttpClient _cachedHttpClient = new(
         httpClient,
@@ -31,6 +33,8 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     private static readonly HttpClient InsecureTlsHttpClient = CreateInsecureTlsHttpClient();
 
+    private PluginPayloadSource PayloadSource => _payloadSource ??= PluginPayloadSource.FromAsync(FetchProviderPayloadAsync);
+
     #endregion
 
     #region Search and Metadata Enrichment
@@ -38,11 +42,11 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
     public async Task<IReadOnlyList<MediaSummary>> SearchAsync(string query, CancellationToken cancellationToken)
     {
         var parsedQuery = PluginSearchQuery.Parse(query, fallbackQuery: query);
-        var resolvedQuery = await ProviderSearchQueryResolver.Instance.ResolveAsync(
+        var resolvedQuery = await Provider.QueryEnricher.ResolveAsync(
             parsedQuery,
-            FetchProviderPayloadForResolverAsync,
+            PayloadSource,
             cancellationToken);
-        var path = ProviderRequestUrls.BuildSearchPath(resolvedQuery);
+        var path = Provider.Client.BuildSearchPath(resolvedQuery);
         if (string.IsNullOrWhiteSpace(path))
         {
             return [];
@@ -96,7 +100,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         return await MediaSummaryStatisticsEnricher.Instance.EnrichAsync(
             summaries,
-            (ids, ct) => Core.FetchStatisticsMetadataAsync(ids, FetchProviderPayloadForResolverAsync, ct),
+            (ids, ct) => Core.FetchStatisticsMetadataAsync(ids, PayloadSource, ct),
             cancellationToken);
     }
 
@@ -104,14 +108,14 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         IReadOnlyList<SearchItem> items,
         CancellationToken cancellationToken)
     {
-        return await Core.EnrichSearchItemsAsync(items, FetchProviderPayloadForResolverAsync, cancellationToken);
+        return await Core.EnrichSearchItemsAsync(items, PayloadSource, cancellationToken);
     }
 
     public Task<IReadOnlyList<SearchSuggestionItem>> GetSearchSuggestionsAsync(
         SearchSuggestionRequest request,
         CancellationToken cancellationToken)
     {
-        return Core.GetSearchSuggestionsAsync(request, FetchProviderPayloadForResolverAsync, cancellationToken);
+        return Core.GetSearchSuggestionsAsync(request, PayloadSource, cancellationToken);
     }
 
     private static MediaSummary BuildMediaSummary(
@@ -124,21 +128,10 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             metadata = items;
         }
 
-        var result = new MediaSummary{
-            Id = entry.id,
-            Source = entry.source,
-            Title = entry.title,
-            MediaType = entry.mediaType,
-            ThumbnailUrl = entry.thumbnailUrl ?? string.Empty,
-            Description = entry.description ?? string.Empty,
-        };
-
-        MediaSummaryStatisticsEnricher.AddMetadata(result, metadata);
-
-        return result;
+        return PluginContractMapper.ToMediaSummary(entry, metadata);
     }
 
-    private async Task<string?> FetchProviderPayloadForResolverAsync(
+    private async Task<string?> FetchProviderPayloadAsync(
         string absoluteUrl,
         CancellationToken cancellationToken)
     {
@@ -199,7 +192,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var path = ProviderRequestUrls.BuildChaptersPath(mediaId, limit: ChapterFeedPageSize, offset: offset);
+            var path = Provider.Client.BuildChaptersPath(mediaId, limit: ChapterFeedPageSize, offset: offset);
             if (string.IsNullOrWhiteSpace(path))
             {
                 break;
@@ -336,7 +329,7 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     private async Task<string?> GetAtHomePayloadInternalAsync(string chapterId, CancellationToken cancellationToken)
     {
-        var path = ProviderRequestUrls.BuildAtHomePath(chapterId);
+        var path = Provider.Client.BuildAtHomePath(chapterId);
         if (string.IsNullOrWhiteSpace(path))
         {
             return null;

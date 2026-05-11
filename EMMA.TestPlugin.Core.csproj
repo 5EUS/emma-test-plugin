@@ -10,8 +10,9 @@
   <ItemGroup>
     <Compile Include="Core/CoreAssemblyInfo.cs" />
     <Compile Include="Core/CoreClient.cs" />
+    <Compile Include="Core/MangadexPluginBundle.cs" />
+    <Compile Include="Core/MangadexSearchSuggestionProvider.cs" />
     <Compile Include="Core/PayloadMapper.cs" />
-    <Compile Include="Core/ProviderRequestUrls.cs" />
     <Compile Include="Core/ProviderSearchQueryResolver.cs" />
     <Compile Include="Core/MangadexProviderClient.cs" />
   </ItemGroup>

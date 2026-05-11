@@ -87,8 +87,8 @@ Use this as the baseline for new providers.
 
 ### 1. URL Building: Single Source of Truth
 
-`Infrastructure/ProviderRequestUrls.cs` is a thin facade that delegates to
-`Infrastructure/MangadexProviderClient.cs`.
+`Core/MangadexProviderClient.cs` is the single source of truth for provider URLs,
+and `Core/MangadexPluginBundle.cs` makes that ownership explicit.
 
 Do not duplicate URL strategy logic in multiple files.
 
@@ -127,7 +127,8 @@ When creating a new plugin, follow this checklist:
    - Use `PluginWasmPagingJsonHelpers.MergeChapterFeedPages()` for pagination.
    - Inherit from `PluginSearchQueryEnricher` for search enrichment.
 3. **Single URL strategy**: Keep one URL strategy implementation in your provider client.
-4. **Delegate through facades**: Keep `ProviderRequestUrls` thin.
+4. **Bundle provider pieces explicitly**: Group your provider client, query enricher,
+   and suggestion provider behind one provider bundle.
 5. **Keep transport adapters thin**: Put provider/domain behavior in `CoreClient`.
 
 ## Where to Start
@@ -149,7 +150,7 @@ Open `Infrastructure/CoreClient.cs` and replace the Mangadex calls with your pro
 
 ### 3. Update provider URLs
 
-Edit `Infrastructure/ProviderRequestUrls.cs` to point to your API endpoints.
+Edit `Core/MangadexProviderClient.cs` to point to your API endpoints.
 Edit `Infrastructure/ProviderSearchQueryResolver.cs` if your search API has different query syntax.
 
 ### 4. Update manifest

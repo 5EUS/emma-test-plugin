@@ -122,15 +122,19 @@ namespace LibraryWorld.wit.exports.emma.plugin
         private const int ChapterFeedPageSize = 500;
         private const int ChapterFeedMaxPages = 20;
 
+        private static readonly PluginProviderBundle<MangadexProviderClient, ProviderSearchQueryResolver, MangadexSearchSuggestionProvider> Provider = MangadexPluginBundle.Instance;
         private static readonly PluginOperationPayloadRouter InvokePayloadRouter = BuildInvokePayloadRouter();
 
         private static string ResolveSearchPayload(PluginSearchQuery query, string? payloadJson)
         {
+            Func<PluginSearchQuery, PluginPayloadSource, PluginSearchQuery> queryResolver =
+                (parsedQuery, payloadSource) => Provider.QueryEnricher.Resolve(parsedQuery, payloadSource);
+
             return PluginWasmHostBridgeScaffold.ResolveSearchPayload(
                 payloadJson,
                 query,
-                ProviderSearchQueryResolver.Instance.Resolve,
-                ProviderRequestUrls.BuildSearchAbsoluteUrl,
+                queryResolver,
+                resolvedQuery => Provider.Client.BuildSearchAbsoluteUrl(resolvedQuery),
                 HostBridgeInterop.OperationPayload);
         }
 
@@ -141,7 +145,7 @@ namespace LibraryWorld.wit.exports.emma.plugin
                 payloadJson,
                 ChapterFeedPageSize,
                 ChapterFeedMaxPages,
-                ProviderRequestUrls.BuildChaptersAbsoluteUrl,
+                Provider.Client.BuildChaptersAbsoluteUrl,
                 HostBridgeInterop.OperationPayload);
         }
 
@@ -150,7 +154,7 @@ namespace LibraryWorld.wit.exports.emma.plugin
             return PluginPayloadResolvers.ResolveProvidedOrHostPayload(
                 payloadJson,
                 "page",
-                ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId),
+                Provider.Client.BuildAtHomeAbsoluteUrl(chapterId),
                 HostBridgeInterop.OperationPayload);
         }
 
@@ -159,7 +163,7 @@ namespace LibraryWorld.wit.exports.emma.plugin
             return PluginPayloadResolvers.ResolveProvidedOrHostPayload(
                 payloadJson,
                 "pages",
-                ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId),
+                Provider.Client.BuildAtHomeAbsoluteUrl(chapterId),
                 HostBridgeInterop.OperationPayload);
         }
 
@@ -197,11 +201,13 @@ namespace LibraryWorld.wit.exports.emma.plugin
                 .RegisterStandardPagedMediaHints(
                     parsed => PluginSearchUrlResolver.ResolveSearchAbsoluteUrl(
                         parsed,
-                        ProviderSearchQueryResolver.Instance.Resolve,
-                        ProviderRequestUrls.BuildSearchAbsoluteUrl,
-                        HostBridgeInterop.OperationPayload),
-                    ProviderRequestUrls.BuildChaptersAbsoluteUrl,
-                    ProviderRequestUrls.BuildAtHomeAbsoluteUrl)
+                        (parsedQuery, payloadSource) => Provider.QueryEnricher.Resolve(parsedQuery, payloadSource),
+                        resolvedQuery => Provider.Client.BuildSearchAbsoluteUrl(resolvedQuery),
+                        PluginPayloadSource.FromSync(absoluteUrl => PluginWasmHostBridgeScaffold.FetchPayload(
+                            absoluteUrl,
+                            HostBridgeInterop.OperationPayload))),
+                    mediaId => Provider.Client.BuildChaptersAbsoluteUrl(mediaId),
+                    chapterId => Provider.Client.BuildAtHomeAbsoluteUrl(chapterId))
                 .Register("enrich-search-metadata", _ => null);
         }
     }

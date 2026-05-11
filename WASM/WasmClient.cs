@@ -10,7 +10,9 @@ internal sealed class WasmClient
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
 
+    private static readonly PluginProviderBundle<MangadexProviderClient, ProviderSearchQueryResolver, MangadexSearchSuggestionProvider> Provider = MangadexPluginBundle.Instance;
     private static readonly CoreClient Core = new();
+    private static readonly PluginPayloadSource PayloadSource = PluginPayloadSource.FromSync(TryFetchPayload);
 
     public SearchParseMapResult SearchFromPayloadWithTimings(string payloadJson)
     {
@@ -20,7 +22,7 @@ internal sealed class WasmClient
 
     public IReadOnlyList<SearchItem> EnrichSearchItemsWithStatistics(string enrichmentArgsJson)
     {
-        return Core.EnrichSearchItemsWithStatistics(enrichmentArgsJson, absoluteUrl => TryFetchPayload(absoluteUrl));
+        return Core.EnrichSearchItemsWithStatistics(enrichmentArgsJson, PayloadSource);
     }
 
     public IReadOnlyList<ChapterItem> GetChaptersFromPayload(string mediaId, string payloadJson)
@@ -61,27 +63,30 @@ internal sealed class WasmClient
 
     public string? FetchSearchPayload(PluginSearchQuery query)
     {
+        Func<PluginSearchQuery, PluginPayloadSource, PluginSearchQuery> queryResolver =
+            (parsedQuery, payloadSource) => Provider.QueryEnricher.Resolve(parsedQuery, payloadSource);
+
         return PluginWasmHostBridgeScaffold.ResolveSearchPayload(
             null,
             query,
-            ProviderSearchQueryResolver.Instance.Resolve,
-            ProviderRequestUrls.BuildSearchAbsoluteUrl,
+            queryResolver,
+            resolvedQuery => Provider.Client.BuildSearchAbsoluteUrl(resolvedQuery),
             HostBridgeInterop.OperationPayload);
     }
 
     public string? FetchChaptersPayload(string mediaId)
     {
-        return TryFetchPayload(ProviderRequestUrls.BuildChaptersAbsoluteUrl(mediaId));
+        return PayloadSource.Fetch(Provider.Client.BuildChaptersAbsoluteUrl(mediaId));
     }
 
     public string? FetchAtHomePayload(string chapterId)
     {
-        return TryFetchPayload(ProviderRequestUrls.BuildAtHomeAbsoluteUrl(chapterId));
+        return PayloadSource.Fetch(Provider.Client.BuildAtHomeAbsoluteUrl(chapterId));
     }
 
     public IReadOnlyList<SearchSuggestionItem> GetSearchSuggestions(string requestJson)
     {
-        return Core.GetSearchSuggestions(requestJson, absoluteUrl => TryFetchPayload(absoluteUrl));
+        return Core.GetSearchSuggestions(requestJson, PayloadSource);
     }
 
     internal static string ResolvePayloadContent(string payload)
@@ -106,7 +111,7 @@ internal sealed class WasmClient
             firstNormalizedPayload,
             ChapterFeedPageSize,
             ChapterFeedMaxPages,
-            ProviderRequestUrls.BuildChaptersAbsoluteUrl,
+            Provider.Client.BuildChaptersAbsoluteUrl,
             HostBridgeInterop.OperationPayload);
 
         return mapper(mergedPayload);

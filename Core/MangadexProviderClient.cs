@@ -2,6 +2,14 @@ using EMMA.Plugin.Common;
 
 namespace EMMA.TestPlugin.Core;
 
+internal static class ProviderHttpProfile
+{
+    public static readonly PluginProviderHttpProfile Defaults = new(
+        BaseUri: new Uri("https://api.mangadex.org"),
+        UserAgent: "EMMA-TestPlugin/1.0 (+https://github.com/5EUS/emma-test-plugin)",
+        AcceptMediaType: "application/json");
+}
+
 /// <summary>
 /// Mangadex-specific provider client inheriting from generic base.
 /// Consolidates HTTP profile with URL building for Mangadex API.

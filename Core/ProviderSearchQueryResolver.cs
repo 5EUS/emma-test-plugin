@@ -15,6 +15,7 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
     private static readonly SemaphoreSlim TagLookupRefreshGate = new(1, 1);
     private static readonly ConcurrentDictionary<string, string?> AuthorLookupCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, string?> ArtistLookupCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly MangadexProviderClient ProviderClient = MangadexPluginBundle.Instance.Client;
     private static CatalogCacheEntry _tagLookupCache =
         new(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), DateTimeOffset.MinValue);
 
@@ -70,66 +71,6 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         return UuidRegex.IsMatch(value);
     }
 
-    public async Task<IReadOnlyList<SearchSuggestionItem>> GetSuggestionsAsync(
-        SearchSuggestionRequest request,
-        Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(fetchAbsoluteUrlAsync);
-
-        var limit = Math.Clamp(request.Limit ?? 20, 1, 50);
-        var excludedValues = GetExistingValues(request.SearchQuery, request.ControlId);
-
-        return request.ControlId switch
-        {
-            "core.tags" or "core.tags.exclude" => FilterTagSuggestions(
-                await GetTagLookupAsync(fetchAbsoluteUrlAsync, cancellationToken),
-                request.Query,
-                limit,
-                excludedValues),
-
-            "core.author" or "core.artist" => await GetAuthorOrArtistSuggestionsAsync(
-                request.Query,
-                limit,
-                excludedValues,
-                fetchAbsoluteUrlAsync,
-                cancellationToken),
-
-            _ => []
-        };
-    }
-
-    public IReadOnlyList<SearchSuggestionItem> GetSuggestions(
-        SearchSuggestionRequest request,
-        Func<string, string?> fetchAbsoluteUrl)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(fetchAbsoluteUrl);
-
-        var limit = Math.Clamp(request.Limit ?? 20, 1, 50);
-        var excludedValues = GetExistingValues(request.SearchQuery, request.ControlId);
-
-        return request.ControlId switch
-        {
-            "core.tags" or "core.tags.exclude" => FilterTagSuggestions(
-                GetTagLookupAsync(
-                    (absoluteUrl, cancellationToken) => Task.FromResult(fetchAbsoluteUrl(absoluteUrl)),
-                    CancellationToken.None).GetAwaiter().GetResult(),
-                request.Query,
-                limit,
-                excludedValues),
-
-            "core.author" or "core.artist" => GetAuthorOrArtistSuggestions(
-                request.Query,
-                limit,
-                excludedValues,
-                fetchAbsoluteUrl),
-
-            _ => []
-        };
-    }
-
     protected override IReadOnlyDictionary<string, string> ParseCatalogResponse(string payloadJson)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -173,6 +114,14 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         return map;
     }
 
+    internal Task<IReadOnlyDictionary<string, string>> GetTagLookupAsync(
+        PluginPayloadSource payloadSource,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(payloadSource);
+        return GetTagLookupAsync(payloadSource.FetchAsync, cancellationToken);
+    }
+
     private async Task<IReadOnlyDictionary<string, string>> GetTagLookupAsync(
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
@@ -194,7 +143,7 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
                 return snapshot.ValueByName;
             }
 
-            var absoluteUrl = ProviderRequestUrls.BuildTagCatalogAbsoluteUrl();
+            var absoluteUrl = ProviderClient.BuildTagCatalogAbsoluteUrl();
             var payload = string.IsNullOrWhiteSpace(absoluteUrl)
                 ? null
                 : await fetchAbsoluteUrlAsync(absoluteUrl, cancellationToken);
@@ -223,7 +172,7 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
     {
-        var absoluteUrl = ProviderRequestUrls.BuildAuthorLookupAbsoluteUrl(input, 10);
+        var absoluteUrl = ProviderClient.BuildAuthorLookupAbsoluteUrl(input, 10);
         if (string.IsNullOrWhiteSpace(absoluteUrl))
         {
             return null;
@@ -279,6 +228,17 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         return fuzzy;
     }
 
+    internal Task<IReadOnlyList<SearchSuggestionItem>> GetAuthorOrArtistSuggestionsAsync(
+        string input,
+        int limit,
+        HashSet<string> excludedValues,
+        PluginPayloadSource payloadSource,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(payloadSource);
+        return GetAuthorOrArtistSuggestionsAsync(input, limit, excludedValues, payloadSource.FetchAsync, cancellationToken);
+    }
+
     private async Task<IReadOnlyList<SearchSuggestionItem>> GetAuthorOrArtistSuggestionsAsync(
         string input,
         int limit,
@@ -286,7 +246,7 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
         Func<string, CancellationToken, Task<string?>> fetchAbsoluteUrlAsync,
         CancellationToken cancellationToken)
     {
-        var absoluteUrl = ProviderRequestUrls.BuildAuthorLookupAbsoluteUrl(input, limit);
+        var absoluteUrl = ProviderClient.BuildAuthorLookupAbsoluteUrl(input, limit);
         if (string.IsNullOrWhiteSpace(absoluteUrl))
         {
             return [];
@@ -294,48 +254,6 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
 
         var payload = await fetchAbsoluteUrlAsync(absoluteUrl, cancellationToken);
         return ParseAuthorOrArtistSuggestions(payload, input, limit, excludedValues);
-    }
-
-    private IReadOnlyList<SearchSuggestionItem> GetAuthorOrArtistSuggestions(
-        string input,
-        int limit,
-        HashSet<string> excludedValues,
-        Func<string, string?> fetchAbsoluteUrl)
-    {
-        var absoluteUrl = ProviderRequestUrls.BuildAuthorLookupAbsoluteUrl(input, limit);
-        if (string.IsNullOrWhiteSpace(absoluteUrl))
-        {
-            return [];
-        }
-
-        var payload = fetchAbsoluteUrl(absoluteUrl);
-        return ParseAuthorOrArtistSuggestions(payload, input, limit, excludedValues);
-    }
-
-    private static IReadOnlyList<SearchSuggestionItem> FilterTagSuggestions(
-        IReadOnlyDictionary<string, string> lookup,
-        string input,
-        int limit,
-        HashSet<string> excludedValues)
-    {
-        if (lookup.Count == 0)
-        {
-            return [];
-        }
-
-        var needle = input?.Trim() ?? string.Empty;
-
-        return [.. lookup
-            .OrderBy(entry => RankSuggestion(entry.Key, needle))
-            .ThenBy(static entry => entry.Key, StringComparer.OrdinalIgnoreCase)
-            .Where(entry => string.IsNullOrWhiteSpace(needle)
-                || entry.Key.Contains(needle, StringComparison.OrdinalIgnoreCase))
-            .Where(entry => !excludedValues.Contains(entry.Key))
-            .Take(limit)
-            .Select(static entry => new SearchSuggestionItem(
-                entry.Key,
-                entry.Key,
-                entry.Value))];
     }
 
     private static IReadOnlyList<SearchSuggestionItem> ParseAuthorOrArtistSuggestions(
@@ -390,13 +308,6 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
             .OrderBy(suggestion => RankSuggestion(suggestion.Label, needle))
             .ThenBy(static suggestion => suggestion.Label, StringComparer.OrdinalIgnoreCase)
             .Take(limit)];
-    }
-
-    private static HashSet<string> GetExistingValues(PluginSearchQuery? searchQuery, string controlId)
-    {
-        return searchQuery?.GetFilterValues(controlId) is { Count: > 0 } existing
-            ? new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     private static int RankSuggestion(string candidate, string input)
