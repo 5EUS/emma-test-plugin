@@ -31,9 +31,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="WASM/WasmClient.cs" />
-    <Compile Include="WASM/WasmJsonContext.cs" />
-    <Compile Include="WASM/WasmPluginOperationHost.cs" />
-    <Compile Include="WASM/WasmTypedExports.cs" />
+    <Compile Include="WASM/WasmGlue.cs" />
     <Wit Include="wit/library.wit" World="library" />
   </ItemGroup>
 </Project>

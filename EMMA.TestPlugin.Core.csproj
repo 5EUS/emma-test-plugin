@@ -13,6 +13,6 @@
     <Compile Include="Core/PayloadMapper.cs" />
     <Compile Include="Core/ProviderRequestUrls.cs" />
     <Compile Include="Core/ProviderSearchQueryResolver.cs" />
-    <Compile Include="WASM/MangadexProviderClient.cs" />
+    <Compile Include="Core/MangadexProviderClient.cs" />
   </ItemGroup>
 </Project>

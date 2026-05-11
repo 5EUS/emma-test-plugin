@@ -29,9 +29,9 @@ Adapts domain behavior to the plugin IPC protocol. Kept separate by transport:
   Handles gRPC server lifecycle and dependency injection. Domain calls via injected
   `AspNetClient`.
   
-- **WASM** (`Program.cs` + `Infrastructure/WasmPluginOperationHost.cs` + `Infrastructure/WasmClient.cs`):
-  Coordinates CLI entry points and operation dispatch. Domain calls via `WasmClient`.
-  Uses `WasmTypedExports.cs` to map domain types to WIT component exports.
+- **WASM** (`Program.cs` + `WASM/WasmGlue.cs` + `WASM/WasmClient.cs`):
+  Coordinates CLI entry points, operation dispatch, JSON context, and WIT export helpers.
+  Domain calls still flow through `WasmClient`.
 
 **What to avoid:** Don't put domain logic here. Keep this layer focused on protocol
 negotiation and type conversion.
@@ -109,8 +109,8 @@ For multi-page chapter feeds, use `PluginWasmPagingJsonHelpers.MergeChapterFeedP
 instead of custom offset loops.
 
 Current usage:
-- `Infrastructure/WasmClient.cs`
-- `Infrastructure/WasmTypedExports.cs`
+- `WASM/WasmClient.cs`
+- `WASM/WasmGlue.cs`
 
 ### 4. Search Query Enrichment: PluginSearchQueryEnricher
 

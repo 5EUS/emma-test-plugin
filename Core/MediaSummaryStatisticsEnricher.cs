@@ -9,6 +9,19 @@ namespace EMMA.TestPlugin.Core;
 /// </summary>
 internal sealed class MediaSummaryStatisticsEnricher : PluginDeferredMetadataEnricher<MediaSummary, List<MetadataItem>>
 {
+    internal static void AddMetadata(MediaSummary target, IEnumerable<MetadataItem>? metadata)
+    {
+        if (metadata is null)
+        {
+            return;
+        }
+
+        foreach (var item in metadata)
+        {
+            target.Metadata.Add(new KeyValue { Key = item.key, Value = item.value });
+        }
+    }
+
     protected override string ExtractId(MediaSummary item)
     {
         return item.Id;
@@ -35,10 +48,7 @@ internal sealed class MediaSummaryStatisticsEnricher : PluginDeferredMetadataEnr
         };
 
         enriched.Metadata.AddRange(item.Metadata);
-        foreach (var metaItem in metadata)
-        {
-            enriched.Metadata.Add(new KeyValue { Key = metaItem.key, Value = metaItem.value });
-        }
+        AddMetadata(enriched, metadata);
 
         return await Task.FromResult(enriched);
     }

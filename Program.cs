@@ -18,7 +18,8 @@ namespace EMMA.TestPlugin;
     typeof(WasmJsonContext),
     typeof(WasmChapterOperationItem[]),
     typeof(BenchmarkResult),
-    typeof(NetworkBenchmarkResult))]
+    typeof(NetworkBenchmarkResult),
+    ExportBridgeNamespace = "LibraryWorld.wit.exports.emma.plugin")]
 #endif
 public static partial class Program
 {

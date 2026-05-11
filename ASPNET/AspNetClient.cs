@@ -19,8 +19,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
     private const int ChapterFeedPageSize = 500;
     private const int ChapterFeedMaxPages = 20;
-    private const int StatisticsBatchSize = 150;
-
     private static readonly CoreClient Core = new();
     private readonly HttpClient _httpClient = httpClient;
     private readonly ILogger<AspNetClient> _logger = logger;
@@ -30,12 +28,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
         new PluginCachedHttpClientOptions(
             CacheTtl: TimeSpan.FromMinutes(2),
             MinRequestSpacing: TimeSpan.FromMilliseconds(250)));
-
-    private readonly PluginBatchMetadataLoader<MetadataItem> _metadataLoader = new(
-        new PluginBatchMetadataLoaderOptions(
-            BatchSize: StatisticsBatchSize,
-            DelayBetweenBatches: TimeSpan.Zero,
-            DelayBetweenRequests: TimeSpan.Zero));
 
     private static readonly HttpClient InsecureTlsHttpClient = CreateInsecureTlsHttpClient();
 
@@ -102,97 +94,24 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             return summaries;
         }
 
-        var statisticsById = await FetchStatisticsMetadataAsync(
-            summaries.Select(s => s.Id),
+        return await MediaSummaryStatisticsEnricher.Instance.EnrichAsync(
+            summaries,
+            (ids, ct) => Core.FetchStatisticsMetadataAsync(ids, FetchProviderPayloadForResolverAsync, ct),
             cancellationToken);
-
-        if (statisticsById.Count == 0)
-        {
-            return summaries;
-        }
-
-        var enriched = new List<MediaSummary>(summaries.Count);
-        foreach (var summary in summaries)
-        {
-            if (!statisticsById.TryGetValue(summary.Id, out var statsItems) || statsItems.Count == 0)
-            {
-                enriched.Add(summary);
-                continue;
-            }
-
-            var enrichedSummary = new MediaSummary
-            {
-                Id = summary.Id,
-                Source = summary.Source,
-                Title = summary.Title,
-                MediaType = summary.MediaType,
-                ThumbnailUrl = summary.ThumbnailUrl,
-                Description = summary.Description
-            };
-
-            enrichedSummary.Metadata.AddRange(summary.Metadata);
-            foreach (var item in statsItems)
-            {
-                enrichedSummary.Metadata.Add(new KeyValue { Key = item.key, Value = item.value });
-            }
-
-            enriched.Add(enrichedSummary);
-        }
-
-        return enriched;
     }
 
     public async Task<IReadOnlyList<SearchItem>> EnrichSearchItemsAsync(
         IReadOnlyList<SearchItem> items,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(items);
-
-        var summaries = items.Select(static item =>
-        {
-            var summary = new MediaSummary
-            {
-                Id = item.id,
-                Source = item.source,
-                Title = item.title,
-                MediaType = item.mediaType,
-                ThumbnailUrl = item.thumbnailUrl ?? string.Empty,
-                Description = item.description ?? string.Empty
-            };
-
-            if (item.metadata is not null)
-            {
-                foreach (var metadataItem in item.metadata)
-                {
-                    summary.Metadata.Add(new KeyValue { Key = metadataItem.key, Value = metadataItem.value });
-                }
-            }
-
-            return summary;
-        }).ToArray();
-
-        var enriched = await EnrichMediaSummariesWithStatisticsAsync(summaries, cancellationToken);
-        return enriched.Select(static summary => new SearchItem(
-            summary.Id,
-            summary.Source,
-            summary.Title,
-            summary.MediaType,
-            string.IsNullOrWhiteSpace(summary.ThumbnailUrl) ? null : summary.ThumbnailUrl,
-            string.IsNullOrWhiteSpace(summary.Description) ? null : summary.Description,
-            summary.Metadata.Count == 0
-                ? null
-                : summary.Metadata.Select(static item => new MetadataItem(item.Key, item.Value)).ToArray()))
-            .ToArray();
+        return await Core.EnrichSearchItemsAsync(items, FetchProviderPayloadForResolverAsync, cancellationToken);
     }
 
     public Task<IReadOnlyList<SearchSuggestionItem>> GetSearchSuggestionsAsync(
         SearchSuggestionRequest request,
         CancellationToken cancellationToken)
     {
-        return ProviderSearchQueryResolver.Instance.GetSuggestionsAsync(
-            request,
-            FetchProviderPayloadForResolverAsync,
-            cancellationToken);
+        return Core.GetSearchSuggestionsAsync(request, FetchProviderPayloadForResolverAsync, cancellationToken);
     }
 
     private static MediaSummary BuildMediaSummary(
@@ -214,197 +133,9 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
             Description = entry.description ?? string.Empty,
         };
 
-        if (metadata is not null)
-        {
-            foreach (var item in metadata)
-            {
-                result.Metadata.Add(new KeyValue{ Key = item.key, Value = item.value });
-            }
-        }
+        MediaSummaryStatisticsEnricher.AddMetadata(result, metadata);
 
         return result;
-    }
-
-    private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsMetadataAsync(
-        IEnumerable<string> mangaIds,
-        CancellationToken cancellationToken)
-        // GOOD PATTERN: Uses PluginBatchMetadataLoader from SDK for batch+fallback logic.
-        // This is reusable across any provider. WasmClient should follow the same pattern.
-    {
-        return await _metadataLoader.LoadAsync(
-            mangaIds,
-            FetchStatisticsBatchAsync,
-            FetchStatisticsSingleAsync,
-            cancellationToken);
-    }
-
-    private async Task<IReadOnlyDictionary<string, List<MetadataItem>>> FetchStatisticsBatchAsync(
-        IReadOnlyList<string> mangaIds,
-        CancellationToken cancellationToken)
-    {
-        var results = new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaIds);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return results;
-        }
-
-        try
-        {
-            using var response = await GetWithPolicyAsync(url, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return results;
-            }
-
-            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(payloadJson))
-            {
-                return results;
-            }
-
-            using var doc = JsonDocument.Parse(payloadJson);
-            var batchResults = PayloadMapper.ExtractStatisticsMetadata(doc.RootElement);
-            var returnedIds = new HashSet<string>(batchResults.Keys, StringComparer.OrdinalIgnoreCase);
-            foreach (var mangaId in mangaIds)
-            {
-                if (returnedIds.Contains(mangaId) || !TryExtractRatingMetadataForId(payloadJson, mangaId, out var ratingItem))
-                {
-                    continue;
-                }
-                returnedIds.Add(mangaId);
-                results[mangaId] = [ratingItem];
-            }
-
-            return batchResults.Count > 0 ? batchResults : results;
-        }
-        catch
-        {
-            return results;
-        }
-    }
-
-    private async Task<IReadOnlyList<MetadataItem>> FetchStatisticsSingleAsync(
-        string mangaId,
-        CancellationToken cancellationToken)
-    {
-        var url = ProviderRequestUrls.BuildStatisticsAbsoluteUrl(mangaId);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return [];
-        }
-
-        try
-        {
-            using var response = await GetWithPolicyAsync(url, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return [];
-            }
-
-            var payloadJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(payloadJson))
-            {
-                return [];
-            }
-
-            using var doc = JsonDocument.Parse(payloadJson);
-            var metadata = PayloadMapper.ExtractStatisticsMetadata(doc.RootElement);
-            if (metadata.TryGetValue(mangaId, out var items) && items.Count > 0)
-            {
-                return items;
-            }
-
-            if (TryExtractRatingMetadataForId(payloadJson, mangaId, out var ratingItem))
-            {
-                return [ratingItem];
-            }
-
-            return [];
-        }
-        catch
-        {
-            return [];
-        }
-    }
-
-    private static bool TryExtractRatingMetadataForId(string payloadJson, string mangaId, out MetadataItem ratingItem)
-    {
-        ratingItem = default!;
-        if (string.IsNullOrWhiteSpace(payloadJson) || string.IsNullOrWhiteSpace(mangaId))
-        {
-            return false;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(payloadJson);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("statistics", out var statistics)
-                || statistics.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            if (!statistics.TryGetProperty(mangaId, out var item)
-                || item.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            if (!item.TryGetProperty("rating", out var rating)
-                || rating.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-
-            string? score = null;
-            if (rating.TryGetProperty("bayesian", out var bayesian)
-                && (bayesian.ValueKind == JsonValueKind.Number || bayesian.ValueKind == JsonValueKind.String))
-            {
-                score = bayesian.ToString().Trim();
-            }
-
-            if (string.IsNullOrWhiteSpace(score)
-                && rating.TryGetProperty("average", out var average)
-                && (average.ValueKind == JsonValueKind.Number || average.ValueKind == JsonValueKind.String))
-            {
-                score = average.ToString().Trim();
-            }
-
-            if (string.IsNullOrWhiteSpace(score))
-            {
-                return false;
-            }
-
-            ratingItem = new MetadataItem("Rating", score);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static void MergeMetadata(
-        IDictionary<string, List<MetadataItem>> target,
-        IReadOnlyDictionary<string, List<MetadataItem>> source)
-    {
-        foreach (var (id, items) in source)
-        {
-            if (items.Count == 0)
-            {
-                continue;
-            }
-
-            if (!target.TryGetValue(id, out var existing))
-            {
-                target[id] = new List<MetadataItem>(items);
-                continue;
-            }
-
-            existing.AddRange(items);
-        }
     }
 
     private async Task<string?> FetchProviderPayloadForResolverAsync(
