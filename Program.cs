@@ -53,11 +53,9 @@ public static partial class Program
                 });
                 services.AddTransient<IPluginSearchMetadataRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
                 services.AddTransient<IPluginSearchSuggestionsRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
-                services.AddTransient<IPluginVideoRuntime>(static provider => provider.GetRequiredService<AspNetClient>());
             })
             .ConfigureDefaultControl(ConfigureDefaultControlService)
                 .AddDefaultPagedProviders<AspNetClient>()
-                .AddDefaultVideoProvider<AspNetClient>()
             .Run(mapDefaultEndpoints: devMode);
     }
 
@@ -67,7 +65,6 @@ public static partial class Program
         options.Capabilities.Add("test-plugin");
         options.Capabilities.Add("search");
         options.Capabilities.Add("pages");
-        options.Capabilities.Add("video");
     }
 
 #else

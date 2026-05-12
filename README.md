@@ -1,7 +1,9 @@
 # EMMA Test Plugin
 
-A reference implementation of the EMMA plugin SDK showing best practices for
-both ASP.NET and WASM transports with minimal example behavior (Mangadex API).
+A reference implementation of the EMMA plugin SDK showing the paged-first
+golden path for both ASP.NET and WASM transports with minimal example behavior
+(Mangadex API). Dedicated video parity lives in the separate `emma-video-test`
+sample.
 
 The repository now uses explicit transport projects so every IDE can analyze the
 transport you opened directly instead of relying on design-time MSBuild property

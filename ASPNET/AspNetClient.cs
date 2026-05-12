@@ -13,7 +13,7 @@ using MetadataItem = EMMA.Plugin.Common.MetadataItem;
 namespace EMMA.TestPlugin.ASPNET;
 
 public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> logger)
-    : IPluginPagedMediaRuntime, IPluginSearchMetadataRuntime, IPluginSearchSuggestionsRuntime, IPluginVideoRuntime
+    : IPluginPagedMediaRuntime, IPluginSearchMetadataRuntime, IPluginSearchSuggestionsRuntime
 {
     #region Constants and Dependencies
 
@@ -272,22 +272,6 @@ public sealed class AspNetClient(HttpClient httpClient, ILogger<AspNetClient> lo
 
         var reachedEnd = startIndex + slice.Count >= pages.Count;
         return (slice, reachedEnd);
-    }
-
-    #endregion
-
-    #region Video Runtime
-
-    public Task<StreamResponse> GetStreamsAsync(string mediaId, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new StreamResponse());
-    }
-
-    public Task<SegmentResponse> GetSegmentAsync(string mediaId, string streamId, int sequence, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new SegmentResponse());
     }
 
     #endregion
