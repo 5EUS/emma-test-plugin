@@ -80,6 +80,12 @@ Build the WASM transport with:
 WASI_SDK_PATH=/path/to/wasi-sdk dotnet build EMMA.TestPlugin.Wasm.csproj
 ```
 
+## WASM Troubleshooting
+
+- If WASM search or invoke fails with `failed:A type initializer threw an exception`, check for circular static initialization first.
+- In this plugin, the failure came from types reaching into `MangadexPluginBundle.Instance` during their own static field initialization.
+- Prefer leaf singletons such as `MangadexProviderClient.Instance` in static fields when the code only needs the provider client. Reserve `MangadexPluginBundle.Instance` for call sites that actually need the aggregated bundle.
+
 ## Code Consolidation & Reusable Patterns
 
 This plugin now implements reusable SDK patterns directly in both transports.

@@ -15,7 +15,7 @@ internal sealed partial class ProviderSearchQueryResolver : PluginSearchQueryEnr
     private static readonly SemaphoreSlim TagLookupRefreshGate = new(1, 1);
     private static readonly ConcurrentDictionary<string, string?> AuthorLookupCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, string?> ArtistLookupCache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly MangadexProviderClient ProviderClient = MangadexPluginBundle.Instance.Client;
+    private static readonly MangadexProviderClient ProviderClient = MangadexProviderClient.Instance;
     private static CatalogCacheEntry _tagLookupCache =
         new(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), DateTimeOffset.MinValue);
 

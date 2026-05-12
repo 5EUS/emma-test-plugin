@@ -10,7 +10,7 @@ internal sealed class CoreClient
     private const int StatisticsBatchSize = 150;
     private static readonly IReadOnlyDictionary<string, List<MetadataItem>> EmptyMetadataMap =
         new Dictionary<string, List<MetadataItem>>(StringComparer.OrdinalIgnoreCase);
-    private static readonly MangadexProviderClient ProviderClient = MangadexPluginBundle.Instance.Client;
+    private static readonly MangadexProviderClient ProviderClient = MangadexProviderClient.Instance;
     private static readonly PluginDeferredSearchMetadataEnricher SearchMetadataEnricher = new();
 
     public SearchParseMapResult SearchFromPayloadWithTimings(string payloadJson)
