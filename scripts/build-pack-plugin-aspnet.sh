@@ -10,6 +10,7 @@ PACK_DIR="$OUT_DIR/pack"
 ASPNET_BUILD_CONFIGURATION="${ASPNET_BUILD_CONFIGURATION:-Release}"
 ASPNET_PROJECT_PATH="${ASPNET_PROJECT_PATH:-$PLUGIN_DIR/EMMA.TestPlugin.csproj}"
 EMMA_SDK_VERSION="${EMMA_SDK_VERSION:-}"
+USE_LOCAL_EMMA_SDK="${UseLocalEmmaSdk:-${USE_LOCAL_EMMA_SDK:-}}"
 ASPNET_NO_RESTORE="${ASPNET_NO_RESTORE:-0}"
 HOST_OS="$(uname -s)"
 DEFAULT_TARGETS="osx-arm64"
@@ -162,6 +163,10 @@ for TARGET in $TARGETS; do
     publish_args+=("-p:EmmaSdkVersion=$EMMA_SDK_VERSION")
   fi
 
+  if [[ -n "$USE_LOCAL_EMMA_SDK" ]]; then
+    publish_args+=("-p:UseLocalEmmaSdk=$USE_LOCAL_EMMA_SDK")
+  fi
+
   if [[ "$ASPNET_NO_RESTORE" == "1" ]]; then
     publish_args+=("--no-restore")
   fi
@@ -238,6 +243,10 @@ for TARGET in $TARGETS; do
       cp "$MANIFEST_OUT" "$MANIFEST_PATH"
       echo "Signed source manifest in-place: $MANIFEST_PATH"
     fi
+  fi
+
+  if [[ -x "$ROOT_DIR/scripts/plugin-validate-manifest.sh" ]]; then
+    "$ROOT_DIR/scripts/plugin-validate-manifest.sh" "$MANIFEST_OUT"
   fi
 
   ( cd "$PACKAGE_ROOT" && zip -r "../${PLUGIN_ID}_${PLUGIN_VERSION}_${TARGET}.zip" . ) >/dev/null

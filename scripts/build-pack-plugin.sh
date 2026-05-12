@@ -17,6 +17,8 @@ WASM_BUILD_CONFIGURATION="${WASM_BUILD_CONFIGURATION:-Release}"
 WASM_BUILD_RID="${WASM_BUILD_RID:-wasi-wasm}"
 WASM_BUILD_OUTPUT="${WASM_BUILD_OUTPUT:-$OUT_DIR/wasm-publish}"
 WASM_OUTPUT_NAME="${WASM_OUTPUT_NAME:-}"
+EMMA_SDK_VERSION="${EMMA_SDK_VERSION:-}"
+USE_LOCAL_EMMA_SDK="${UseLocalEmmaSdk:-${USE_LOCAL_EMMA_SDK:-}}"
 WASM_BUILD_TOOLCHAIN="${WASM_BUILD_TOOLCHAIN:-componentize}"
 WASM_NATIVE_CODEGEN="${WASM_NATIVE_CODEGEN:-none}"
 SKIP_WASM_BUILD="${SKIP_WASM_BUILD:-0}"
@@ -184,7 +186,9 @@ build_wasm_component() {
   dotnet restore "$WASM_PROJECT_PATH" \
     --no-cache \
     --force-evaluate \
-    --runtime "$WASM_BUILD_RID" >/dev/null
+    --runtime "$WASM_BUILD_RID" \
+    ${EMMA_SDK_VERSION:+-p:EmmaSdkVersion=$EMMA_SDK_VERSION} \
+    ${USE_LOCAL_EMMA_SDK:+-p:UseLocalEmmaSdk=$USE_LOCAL_EMMA_SDK} >/dev/null
 
   if [[ "$WASM_BUILD_TOOLCHAIN" != "componentize" ]]; then
     echo "Unsupported WASM_BUILD_TOOLCHAIN '$WASM_BUILD_TOOLCHAIN'. Only 'componentize' is supported." >&2
@@ -198,6 +202,8 @@ build_wasm_component() {
     -c "$WASM_BUILD_CONFIGURATION" \
     -r "$WASM_BUILD_RID" \
     --self-contained true \
+    ${EMMA_SDK_VERSION:+-p:EmmaSdkVersion=$EMMA_SDK_VERSION} \
+    ${USE_LOCAL_EMMA_SDK:+-p:UseLocalEmmaSdk=$USE_LOCAL_EMMA_SDK} \
     -p:PublishAot=false \
     -p:NativeCodeGen="$WASM_NATIVE_CODEGEN" \
     -p:DebugType=None \
@@ -211,6 +217,8 @@ build_wasm_component() {
         -c "$WASM_BUILD_CONFIGURATION" \
         -r "$WASM_BUILD_RID" \
         --self-contained true \
+        ${EMMA_SDK_VERSION:+-p:EmmaSdkVersion=$EMMA_SDK_VERSION} \
+        ${USE_LOCAL_EMMA_SDK:+-p:UseLocalEmmaSdk=$USE_LOCAL_EMMA_SDK} \
         -p:PublishAot=false \
         -p:NativeCodeGen=llvm \
         -p:DebugType=None \
@@ -395,6 +403,10 @@ for TARGET in $TARGETS; do
     EMMA_PLUGIN_SIGNATURE_ISSUED_AT_UTC="$SIGNING_ISSUED_AT_UTC" \
     EMMA_PLUGIN_SIGNATURE_EXPIRES_AT_UTC="$SIGNING_EXPIRES_AT_UTC" \
     "$SCRIPT_DIR/sign-plugin.sh" "$MANIFEST_OUT" "$PLUGIN_OUT_DIR"
+  fi
+
+  if [[ -x "$ROOT_DIR/scripts/plugin-validate-manifest.sh" ]]; then
+    "$ROOT_DIR/scripts/plugin-validate-manifest.sh" "$MANIFEST_OUT"
   fi
 
   ( cd "$PACKAGE_ROOT" && zip -r "../${PLUGIN_ID}_${PLUGIN_VERSION}_${TARGET}.zip" . ) >/dev/null

@@ -1,4 +1,17 @@
-# EMMA.TestPlugin Hardening Notes
+**Phase 5**
+
+Document and certify the release candidate. This phase converts the implementation into a stable release: migration guidance, author docs, and a final readiness pass across the whole workflow.
+
+Work items:
+1. Write migration guide for pre-v0.7 plugins.
+2. Write canonical plugin-author workflow docs.
+3. Run full release-readiness pass across template, sample plugin, package mode, scenarios, and packaging.
+4. Freeze the final deferred-items list.
+
+Exit criteria:
+1. A plugin author can follow one documented path from scaffold to packaged plugin.
+2. v0.7.0 has a clear migration story.
+3. Remaining gaps are explicit non-goals, not accidental omissions.# EMMA.TestPlugin Hardening Notes
 
 ## Current state (from debugging)
 
@@ -56,6 +69,8 @@ Implications:
 7. **Signature and supply-chain controls**
 	- Move toward `RequireSignedPlugins=true` in environments beyond local dev.
 	- Treat signature validation failures as hard startup failures for plugins.
+	- Validate the staged manifest after signing, not only the source manifest before packing.
+	- Exercise `UseLocalEmmaSdk=false` in CI so release packaging proves package-consumer compatibility explicitly.
 
 ## Operational guidance
 

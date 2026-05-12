@@ -193,6 +193,13 @@ From repo root, use the canonical pack flow (includes manifest validation):
 ./scripts/build-pack-plugin.sh ./EMMA.TestPlugin.plugin.json
 ```
 
+To verify the published-package authoring surface instead of falling back to a
+checked-out EMMA workspace, force package mode explicitly:
+
+```bash
+UseLocalEmmaSdk=false EMMA_SDK_VERSION=0.7.0 ./scripts/build-pack-plugin.sh ./EMMA.TestPlugin.plugin.json
+```
+
 Build wasm package variant:
 
 ```bash
@@ -204,6 +211,10 @@ Build regular ASP.NET plugin package variant (for example Linux x64):
 ```bash
 TARGETS="linux-x64" ./scripts/build-pack-plugin-aspnet.sh ./EMMA.TestPlugin.plugin.json
 ```
+
+Both pack scripts now validate the staged manifest after signing as well as the
+source manifest before packaging, so CI and local release checks fail on invalid
+signature metadata instead of only catching malformed source manifests.
 
 ## Signing (Delegated RSA)
 
@@ -231,6 +242,10 @@ Generate a delegated keypair (script name kept for workflow compatibility):
 ```
 
 For CI compatibility, existing workflows still pass `EMMA_HMAC_KEY_BASE64`; set that secret to the base64 PEM private key value.
+
+The Phase 4 smoke and release workflows now also force `UseLocalEmmaSdk=false`
+so package-consumer compatibility is exercised even when an `EMMA/` checkout is
+present beside the plugin repository.
 
 ## Mangadex data
 

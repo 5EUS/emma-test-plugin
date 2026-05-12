@@ -69,7 +69,7 @@ jobs:
 
       - name: Build release package
         env:
-          EMMA_SDK_VERSION: ${{ vars.EMMA_SDK_VERSION || '0.1.0' }}
+          EMMA_SDK_VERSION: ${{ vars.EMMA_SDK_VERSION || '0.7.0' }}
           ASPNET_NO_RESTORE: "1"
           ASPNET_TARGET_RID: "linux-x64"
           WASM_TARGET: "wasm"
@@ -86,6 +86,7 @@ jobs:
             --runtime "$ASPNET_TARGET_RID" \
             --source https://api.nuget.org/v3/index.json \
             --source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json \
+            -p:UseLocalEmmaSdk=false \
             -p:EmmaSdkVersion="$EMMA_SDK_VERSION"
 
           dotnet restore EMMA.TestPlugin.Wasm.csproj \
@@ -94,16 +95,19 @@ jobs:
             --runtime wasi-wasm \
             --source https://api.nuget.org/v3/index.json \
             --source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json \
+            -p:UseLocalEmmaSdk=false \
             -p:EmmaSdkVersion="$EMMA_SDK_VERSION"
 
           TARGETS="$ASPNET_TARGET_RID" \
           EMMA_SDK_VERSION="$EMMA_SDK_VERSION" \
+          UseLocalEmmaSdk=false \
           scripts/build-pack-plugin-aspnet.sh EMMA.TestPlugin.plugin.json
 
           TARGETS="$WASM_TARGET" \
           EMMA_SDK_VERSION="$EMMA_SDK_VERSION" \
           WASM_NATIVE_CODEGEN="llvm" \
           WASI_SDK_PATH="$WASI_SDK_PATH" \
+          UseLocalEmmaSdk=false \
           scripts/build-pack-plugin.sh EMMA.TestPlugin.plugin.json
 
       - name: Compute sha256

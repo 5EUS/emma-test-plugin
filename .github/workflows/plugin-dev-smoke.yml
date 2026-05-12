@@ -68,17 +68,23 @@ jobs:
         env:
           EMMA_PLUGIN_DEV_CONFIG: plugin.dev.sample.json
           EMMA_PLUGIN_PROFILE: linux-dev
+          UseLocalEmmaSdk: "false"
         run: |
           set -euo pipefail
           dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- build
           dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario paged-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario enriched-rating-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario second-result-metadata-smoke "one piece"
 
       - name: WASM direct smoke
         env:
           EMMA_PLUGIN_DEV_CONFIG: plugin.dev.sample.json
           EMMA_PLUGIN_PROFILE: wasm-dev
           WASI_SDK_PATH: ${{ runner.temp }}/wasi-sdk
+          UseLocalEmmaSdk: "false"
         run: |
           set -euo pipefail
           dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- build
           dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario paged-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario enriched-rating-smoke naruto
+          dotnet run --project EMMA/src/EMMA.Cli/EMMA.Cli.csproj --no-restore -- scenario second-result-metadata-smoke "one piece"
