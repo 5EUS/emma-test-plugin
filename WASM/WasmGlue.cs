@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using EMMA.Plugin.Common;
 using EMMA.TestPlugin.Core;
 using LibraryWorld;
@@ -6,12 +7,12 @@ using LibraryWorld.wit.imports.emma.plugin;
 
 namespace EMMA.TestPlugin.WASM
 {
-    internal sealed class WasmPluginOperationHost : PluginBasicPagedWasmOperationHost<WasmChapterOperationItem>
+    internal sealed class WasmPluginOperationHost : PluginBasicPagedVideoWasmOperationHost<WasmChapterOperationItem>
     {
         private static readonly PluginBasicPagedWasmHostOptions<WasmChapterOperationItem> HostOptions = new(
             HandshakeVersion: "1.0.0",
             HandshakeMessage: "EMMA wasm component ready",
-            CapabilityProfile: PluginCapabilityProfile.PagedOnly,
+            CapabilityProfile: PluginCapabilityProfile.PagedAndVideo,
             HandshakeTypeInfo: WasmJsonContext.Default.HandshakeResponse,
             CapabilityTypeInfo: WasmJsonContext.Default.CapabilityItemArray,
             SearchTypeInfo: WasmJsonContext.Default.SearchItemArray,
@@ -25,12 +26,18 @@ namespace EMMA.TestPlugin.WASM
 
         private readonly WasmClient _client = new();
 
+        protected override JsonTypeInfo<VideoStreamOperationItem[]> VideoStreamArrayTypeInfo =>
+            WasmJsonContext.Default.VideoStreamOperationItemArray;
+
+        protected override JsonTypeInfo<VideoSegmentOperationItem> VideoSegmentTypeInfo =>
+            WasmJsonContext.Default.VideoSegmentOperationItem;
+
         public WasmPluginOperationHost()
             : base(HostOptions)
         {
         }
 
-        protected override PluginOperationDispatcher ConfigureCustomInvokeHandlers(PluginOperationDispatcher dispatcher)
+        protected override PluginOperationDispatcher ConfigureAdditionalInvokeHandlers(PluginOperationDispatcher dispatcher)
         {
             return dispatcher
                 .Register("enrich-search-metadata", request =>
@@ -79,27 +86,39 @@ namespace EMMA.TestPlugin.WASM
 
         protected override IReadOnlyList<PageItem> GetPagesFromPayload(string chapterId, int startIndex, int count, string payloadJson) =>
             _client.GetPagesFromPayload(chapterId, startIndex, count, payloadJson);
+
+        protected override IReadOnlyList<VideoStreamOperationItem> GetVideoStreams(string mediaId) => [];
+
+        protected override VideoSegmentOperationItem? GetVideoSegment(string mediaId, string streamId, uint sequence) => null;
     }
 
     [JsonSerializable(typeof(string[]))]
-    [JsonSerializable(typeof(HandshakeResponse))]
-    [JsonSerializable(typeof(CapabilityItem[]))]
-    [JsonSerializable(typeof(MetadataItem))]
-    [JsonSerializable(typeof(IReadOnlyList<MetadataItem>))]
-    [JsonSerializable(typeof(List<MetadataItem>))]
-    [JsonSerializable(typeof(SearchSuggestionRequest))]
-    [JsonSerializable(typeof(SearchSuggestionItem))]
-    [JsonSerializable(typeof(SearchSuggestionItem[]))]
-    [JsonSerializable(typeof(IReadOnlyList<SearchSuggestionItem>))]
-    [JsonSerializable(typeof(List<SearchSuggestionItem>))]
-    [JsonSerializable(typeof(SearchItem[]))]
-    [JsonSerializable(typeof(ChapterItem[]))]
+    [JsonSerializable(typeof(Dictionary<string, string>))]
+    [JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.HandshakeResponse))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.CapabilityItem[]))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.MetadataItem))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.IReadOnlyList<global::EMMA.Plugin.Common.MetadataItem>))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.List<global::EMMA.Plugin.Common.MetadataItem>))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.SearchSuggestionRequest))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.SearchSuggestionItem))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.SearchSuggestionItem[]))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.IReadOnlyList<global::EMMA.Plugin.Common.SearchSuggestionItem>))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.List<global::EMMA.Plugin.Common.SearchSuggestionItem>))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.SearchItem[]))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.ChapterItem[]))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.VideoTrackOperationItem))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.VideoTrackOperationItem[]))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.List<global::EMMA.Plugin.Common.VideoTrackOperationItem>))]
+    [JsonSerializable(typeof(global::System.Collections.Generic.IReadOnlyList<global::EMMA.Plugin.Common.VideoTrackOperationItem>))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.VideoStreamOperationItem[]))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.VideoSegmentOperationItem))]
     [JsonSerializable(typeof(WasmChapterOperationItem[]))]
-    [JsonSerializable(typeof(PageItem))]
-    [JsonSerializable(typeof(PageItem[]))]
-    [JsonSerializable(typeof(OperationResult))]
-    [JsonSerializable(typeof(BenchmarkResult))]
-    [JsonSerializable(typeof(NetworkBenchmarkResult))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.PageItem))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.PageItem[]))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.OperationResult))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.BenchmarkResult))]
+    [JsonSerializable(typeof(global::EMMA.Plugin.Common.NetworkBenchmarkResult))]
     internal sealed partial class WasmJsonContext : JsonSerializerContext
     {
     }
