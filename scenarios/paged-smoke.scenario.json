@@ -1,0 +1,28 @@
+{
+  "name": "paged-smoke",
+  "displayName": "Paged Smoke",
+  "description": "Searches for a title and verifies that the canonical paged-first sample returns at least one result through the normalized CLI scenario path.",
+  "defaultQuery": "naruto",
+  "queryLabel": "Paged query",
+  "steps": [
+    {
+      "op": "search",
+      "query": "$query",
+      "save": "results"
+    },
+    {
+      "op": "requireCount",
+      "from": "$results",
+      "min": 1
+    },
+    {
+      "op": "selectFirst",
+      "from": "$results",
+      "save": "media"
+    },
+    {
+      "op": "log",
+      "message": "Paged smoke selected {{media.title}} ({{media.id}}) from {{media.source}}"
+    }
+  ]
+}

@@ -3,6 +3,9 @@
 A reference implementation of the EMMA plugin SDK showing best practices for
 both ASP.NET and WASM transports with minimal example behavior (Mangadex API).
 
+For `v0.7.0`, this sample is intentionally paged-first. The dedicated reference
+path for standardized video support lives in `emma-video-test`.
+
 The repository now uses explicit transport projects so every IDE can analyze the
 transport you opened directly instead of relying on design-time MSBuild property
 switching:
@@ -61,6 +64,9 @@ project instead of a property-switched design-time build:
 This split is deliberate to keep transport concerns isolated and the code readable.
 If you're starting a new plugin, **choose one transport first**, get it working,
 then add the other transport if needed.
+
+For the `v0.7.0` golden path, treat this repository as the paged-media sample
+and `emma-video-test` as the dedicated video-validation sample.
 
 ## Run
 

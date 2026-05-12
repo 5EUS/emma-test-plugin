@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == '' and '$(EMMA_SDK_VERSION)' != ''">$(EMMA_SDK_VERSION)</EmmaSdkVersion>
-    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.6.8</EmmaSdkVersion>
+    <EmmaSdkVersion Condition="'$(EmmaSdkVersion)' == ''">0.7.0</EmmaSdkVersion>
     <EmmaSdkRoot Condition="'$(EmmaSdkRoot)' == '' and Exists('EMMA/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj')">EMMA</EmmaSdkRoot>
     <EmmaSdkRoot Condition="'$(EmmaSdkRoot)' == '' and Exists('../EMMA/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj')">../EMMA</EmmaSdkRoot>
     <UseLocalEmmaSdk Condition="'$(UseLocalEmmaSdk)' == '' and '$(EmmaSdkRoot)' != ''">true</UseLocalEmmaSdk>
