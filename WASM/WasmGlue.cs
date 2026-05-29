@@ -32,7 +32,7 @@ namespace EMMA.TestPlugin.WASM
 
         protected override PluginOperationDispatcher ConfigureCustomInvokeHandlers(PluginOperationDispatcher dispatcher)
         {
-            return dispatcher
+            return base.ConfigureCustomInvokeHandlers(dispatcher)
                 .Register("enrich-search-metadata", request =>
                 {
                     var enriched = _client.EnrichSearchItemsWithStatistics(request.argsJson ?? string.Empty).ToArray();

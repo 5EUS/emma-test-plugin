@@ -54,7 +54,17 @@ DOCKER_IMAGE=${DOCKER_IMAGE:-$DEFAULT_DOCKER_IMAGE}
 DOCKER_PLATFORM=${DOCKER_PLATFORM:-linux/amd64}
 NUGET_VOLUME_NAME=${NUGET_VOLUME_NAME:-emma-nuget}
 WASI_SDK_HOST_PATH=${WASI_SDK_HOST_PATH:-$REPO_ROOT/../wasi-sdk}
+EMMA_SDK_HOST_PATH=${EMMA_SDK_HOST_PATH:-}
 TARGETS=${TARGETS:-wasm}
+
+if [[ -z "$EMMA_SDK_HOST_PATH" ]]; then
+  for candidate in "$REPO_ROOT/../EMMA" "$REPO_ROOT/EMMA"; do
+    if [[ -f "$candidate/src/EMMA.Plugin.Common/EMMA.Plugin.Common.csproj" ]]; then
+      EMMA_SDK_HOST_PATH="$candidate"
+      break
+    fi
+  done
+fi
 
 if [[ ! -d "$WASI_SDK_HOST_PATH" ]]; then
   echo "WASI SDK host path not found: $WASI_SDK_HOST_PATH" >&2
@@ -89,6 +99,7 @@ docker run --rm \
   -v "$REPO_ROOT:/work" \
   -v "$WASI_SDK_HOST_PATH:/opt/wasi-sdk:ro" \
   -v "$NUGET_VOLUME_NAME:/root/.nuget/packages" \
+  ${EMMA_SDK_HOST_PATH:+-v "$EMMA_SDK_HOST_PATH:/opt/emma-sdk"} \
   -w /tmp \
   "$DOCKER_IMAGE" \
-  bash -lc "apt-get update >/dev/null && apt-get install -y --no-install-recommends python3 zip >/dev/null && TARGETS='$TARGETS' WASI_SDK_PATH=/opt/wasi-sdk /work/scripts/build-pack-plugin.sh '$manifest_container_path'"
+  bash -lc "apt-get update >/dev/null && apt-get install -y --no-install-recommends python3 zip >/dev/null && TARGETS='$TARGETS' WASI_SDK_PATH=/opt/wasi-sdk ${EMMA_SDK_HOST_PATH:+EMMA_SDK_ROOT=/opt/emma-sdk USE_LOCAL_EMMA_SDK=true }/work/scripts/build-pack-plugin.sh '$manifest_container_path'"

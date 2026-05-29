@@ -53,6 +53,15 @@ resolve_env_flag() {
 REQUIRE_SIGNED_PLUGINS_VALUE="${EMMA_REQUIRE_SIGNED_PLUGINS:-${PluginSignature__RequireSignedPlugins:-}}"
 REQUIRE_SIGNING="$(resolve_env_flag "$REQUIRE_SIGNED_PLUGINS_VALUE")"
 
+DOTNET_EMMA_SDK_ARGS=()
+if [[ -n "${EMMA_SDK_ROOT:-}" ]]; then
+  DOTNET_EMMA_SDK_ARGS+=("-p:EmmaSdkRoot=$EMMA_SDK_ROOT")
+fi
+
+if [[ -n "${USE_LOCAL_EMMA_SDK:-}" ]]; then
+  DOTNET_EMMA_SDK_ARGS+=("-p:UseLocalEmmaSdk=$USE_LOCAL_EMMA_SDK")
+fi
+
 resolve_default_cwasm_target() {
   local rust_host
   rust_host="$(rustc -vV 2>/dev/null | awk '/^host:/ {print $2}')"
@@ -209,6 +218,7 @@ build_wasm_component() {
     -p:DebugType=None \
     -p:DebugSymbols=false \
     -p:WasmSingleFileBundle=true \
+    "${DOTNET_EMMA_SDK_ARGS[@]}" \
     -o "$WASM_BUILD_OUTPUT" \
     2>&1 | tee "$publish_log"; then
     if grep -q "native/.*\.wasm\" because it was not found" "$publish_log" && [[ "$WASM_NATIVE_CODEGEN" == "none" ]]; then
@@ -224,6 +234,7 @@ build_wasm_component() {
         -p:DebugType=None \
         -p:DebugSymbols=false \
         -p:WasmSingleFileBundle=true \
+        "${DOTNET_EMMA_SDK_ARGS[@]}" \
         -o "$WASM_BUILD_OUTPUT"
     else
       return 1
