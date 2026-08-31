@@ -293,6 +293,133 @@
       ]
     }
   },
+  "preferences": {
+    "version": 1,
+    "categories": [
+      {
+        "id": "connection",
+        "label": "Connection",
+        "description": "Provider identity, authentication, and endpoint settings."
+      },
+      {
+        "id": "search",
+        "label": "Search Defaults",
+        "description": "Saved defaults applied when browsing and searching."
+      },
+      {
+        "id": "advanced",
+        "label": "Advanced",
+        "description": "Diagnostics and low-level request behavior for plugin validation."
+      }
+    ],
+    "fields": [
+      {
+        "key": "connection.username",
+        "label": "Account Name",
+        "type": "string",
+        "category": "connection",
+        "description": "Optional account identifier used by future authenticated requests.",
+        "placeholder": "reader@example.com",
+        "maxLength": 120,
+        "helpText": "Stored as a normal string value in the host database."
+      },
+      {
+        "key": "connection.apiToken",
+        "label": "API Token",
+        "type": "secret",
+        "category": "connection",
+        "description": "Protected secret used to validate secure plugin-managed settings.",
+        "required": true,
+        "placeholder": "Paste a token",
+        "secret": {
+          "protection": "protected",
+          "revealInUi": false,
+          "allowCopy": false
+        },
+        "helpText": "Phase 1 uses host-managed protected storage for this value."
+      },
+      {
+        "key": "search.defaultLanguage",
+        "label": "Default Language",
+        "type": "enum",
+        "category": "search",
+        "description": "Preferred translated language for query additions.",
+        "defaultValue": "en",
+        "options": [
+          {
+            "value": "en",
+            "label": "English",
+            "isDefault": true
+          },
+          {
+            "value": "ja",
+            "label": "Japanese"
+          },
+          {
+            "value": "ko",
+            "label": "Korean"
+          },
+          {
+            "value": "zh",
+            "label": "Chinese"
+          }
+        ]
+      },
+      {
+        "key": "search.defaultMaturity",
+        "label": "Visible Maturity Ratings",
+        "type": "multienum",
+        "category": "search",
+        "description": "Saved default maturity selections for test searches.",
+        "defaultValue": [
+          "safe",
+          "suggestive"
+        ],
+        "options": [
+          {
+            "value": "safe",
+            "label": "Safe",
+            "isDefault": true
+          },
+          {
+            "value": "suggestive",
+            "label": "Suggestive",
+            "isDefault": true
+          },
+          {
+            "value": "erotica",
+            "label": "Erotica"
+          },
+          {
+            "value": "pornographic",
+            "label": "Pornographic"
+          }
+        ]
+      },
+      {
+        "key": "advanced.enableVerboseLogging",
+        "label": "Verbose Logging",
+        "type": "boolean",
+        "category": "advanced",
+        "description": "Turns on extra debug output for provider request experiments.",
+        "defaultValue": false
+      },
+      {
+        "key": "advanced.requestTimeout",
+        "label": "Request Timeout",
+        "type": "duration",
+        "category": "advanced",
+        "description": "Per-request timeout in TimeSpan format.",
+        "defaultValue": "00:00:15",
+        "placeholder": "00:00:15",
+        "visibleWhen": {
+          "field": "advanced.enableVerboseLogging",
+          "equalsValue": true
+        },
+        "helpText": "Shown only when verbose logging is enabled so visibility rules can be exercised."
+      }
+    ]
+  },
   "capabilities": {
     "network": [
       "https"
