@@ -1,0 +1,73 @@
+package emma:core@1.0.0;
+
+/// Turning a node into bytes a client can use. One call serves page images,
+/// video streams, subtitles, audio and article text: the difference is only
+/// the `role` and the returned mime type.
+interface assets {
+    use types.{plugin-error, prop, header};
+
+    /// A resource the host (or client) fetches itself.
+    record remote {
+        url: string,
+        /// Request headers the fetch must carry (Referer, Cookie, Authorization).
+        headers: list<header>,
+        /// When the URL stops working, in ms since the Unix epoch.
+        expires-ms: option<s64>,
+    }
+
+    /// How the bytes are delivered.
+    variant delivery {
+        /// Small payloads (an icon, a short subtitle file) returned directly.
+        inline(list<u8>),
+        /// The host fetches the URL. The preferred path: bytes never cross the
+        /// plugin boundary and one shared cache serves every plugin.
+        remote(remote),
+        /// Only the plugin can read it (signed requests, decryption). The
+        /// string is an opaque token for `read`.
+        proxied(string),
+    }
+
+    record asset {
+        /// Describes the payload. Adaptive streams use their manifest type
+        /// (`application/vnd.apple.mpegurl`, `application/dash+xml`); the client
+        /// player consumes them. EMMA never parses segments.
+        mime: string,
+        delivery: delivery,
+        size: option<u64>,
+        /// Typed facts about this asset: `emma.quality`, `emma.language`,
+        /// `emma.duration-ms`, `emma.drm.scheme`, `emma.drm.license-url`,
+        /// `emma.live`, `emma.width`, `emma.height`, `emma.default`.
+        props: list<prop>,
+    }
+
+    record resolve-request {
+        /// Plugin-local node id.
+        node: string,
+        /// One of the roles declared for the node's kind.
+        role: string,
+        /// Optional preferences, e.g. `emma.quality = "1080p"`. A plugin may
+        /// ignore any hint.
+        hints: list<prop>,
+    }
+
+    /// Resolves a node to its assets for a role. Several assets mean
+    /// alternatives or companions: video qualities, alternate audio tracks,
+    /// subtitle languages. `props` tells them apart.
+    resolve: func(request: resolve-request) -> result<list<asset>, plugin-error>;
+
+    record byte-range {
+        start: u64,
+        /// Absent means "to the end".
+        length: option<u64>,
+    }
+
+    record chunk {
+        bytes: list<u8>,
+        /// Total size when known, so callers can issue further ranges.
+        total: option<u64>,
+    }
+
+    /// Reads from a `proxied` asset. Tokens are valid until the plugin says
+    /// otherwise; an expired token is `not-found`.
+    read: func(token: string, range: option<byte-range>) -> result<chunk, plugin-error>;
+}

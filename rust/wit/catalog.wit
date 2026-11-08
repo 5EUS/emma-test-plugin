@@ -1,0 +1,23 @@
+package emma:core@1.0.0;
+
+/// Reading the media tree. Three calls cover search, browsing, chapter lists,
+/// page lists, episode lists, track lists and library refresh: they are all
+/// "give me nodes".
+interface catalog {
+    use types.{plugin-error, node, node-page, query, page-request};
+
+    /// Searches the plugin's catalog. An empty `query.text` with no filters
+    /// is a valid "browse everything" request; plugins that cannot do that
+    /// return `unsupported`.
+    search: func(query: query) -> result<node-page, plugin-error>;
+
+    /// Lists the children of a node in natural order (reading or playback
+    /// order). `parent` of `none` is the plugin's browse root, which replaces
+    /// the old "landing page": its children are typically section nodes that
+    /// the client can expand further.
+    children: func(parent: option<string>, request: page-request) -> result<node-page, plugin-error>;
+
+    /// Fetches nodes by id, in the order requested. Unknown ids are omitted
+    /// rather than failing the whole call. Used by library refresh and history.
+    get: func(ids: list<string>) -> result<list<node>, plugin-error>;
+}

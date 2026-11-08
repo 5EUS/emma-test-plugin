@@ -1,0 +1,195 @@
+package emma:core@1.0.0;
+
+/// Shared vocabulary for every EMMA plugin interface.
+///
+/// Design rules, in order of importance:
+///   1. Nothing here names a media type. A "manga chapter", an "episode" and a
+///      "recipe" are all a `node` whose `kind` is an open string.
+///   2. Plugins only ever see plugin-local ids. The host owns the (plugin, id)
+///      pair, so two plugins can never collide.
+///   3. Extensible data is typed: `prop` carries a closed set of value types.
+///      There is no JSON string escape hatch.
+interface types {
+    /// Failure classes shared by every call. The host maps these to retries,
+    /// user messages and (for `unsupported`) capability probing.
+    enum error-code {
+        /// The id or token does not exist (any more).
+        not-found,
+        /// Credentials are missing, wrong or expired; the user must act.
+        unauthorized,
+        /// The upstream asked us to slow down; see `retry-after-ms`.
+        rate-limited,
+        /// The upstream is down or unreachable. Retrying later may help.
+        unavailable,
+        /// The request was malformed (bad cursor, unknown filter id, ...).
+        invalid-argument,
+        /// The plugin does not support this request. Not an error condition:
+        /// hosts use it to degrade gracefully.
+        unsupported,
+        /// The host cancelled the call (deadline or shutdown).
+        cancelled,
+        /// A bug in the plugin. Never used for upstream failures.
+        internal,
+    }
+
+    /// The only error type crossing the plugin boundary.
+    record plugin-error {
+        code: error-code,
+        /// Human-readable and safe to show; never contains secrets.
+        message: string,
+        /// Set with `rate-limited` and `unavailable` when the upstream said when
+        /// to retry.
+        retry-after-ms: option<u32>,
+    }
+
+    /// A single typed value in a `prop`.
+    variant prop-value {
+        text(string),
+        integer(s64),
+        number(f64),
+        flag(bool),
+        /// Milliseconds since the Unix epoch, UTC.
+        timestamp-ms(s64),
+        url(string),
+        text-list(list<string>),
+    }
+
+    /// A typed key/value pair. Keys use dotted lower-case names. Keys starting
+    /// with `emma.` are reserved for the well-known vocabulary defined by the
+    /// contract document; everything else is plugin-defined and namespaced by
+    /// the plugin author (for example `acme.scanlation-group`).
+    record prop {
+        key: string,
+        value: prop-value,
+    }
+
+    /// An HTTP header. Shared by assets and host fetches.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    /// One item in the media tree: a series, a season, a chapter, a page, an
+    /// episode, a track, a recipe, a gallery image, a landing-page section.
+    record node {
+        /// Plugin-local identifier. Opaque to the host; stable across calls.
+        id: string,
+        /// Open vocabulary, declared in `meta.plugin-info.kinds`. Lower-case,
+        /// dot-separated by convention (`manga`, `manga.chapter`).
+        kind: string,
+        title: string,
+        /// Plugin-local id of the parent, when the node was returned from a
+        /// context that knows it.
+        parent: option<string>,
+        /// A URL the host fetches for a preview image.
+        thumbnail: option<string>,
+        /// Descriptive data: synopsis, rating, tags, ordinal, release date, ...
+        props: list<prop>,
+    }
+
+    /// A labelled option, used for filter choices and sort orders.
+    record choice {
+        value: string,
+        label: string,
+        description: option<string>,
+        is-default: bool,
+    }
+
+    /// How a client renders and sends a filter.
+    enum filter-type {
+        /// A boolean switch. The value list is `["true"]` or empty.
+        toggle,
+        /// Exactly one of `choices`.
+        single-choice,
+        /// Any subset of `choices`.
+        multi-choice,
+        /// Two values: minimum then maximum. Either may be empty.
+        number-range,
+        /// Free text.
+        text,
+        /// Free text with server-side completion; see `lookup-spec`.
+        lookup,
+    }
+
+    record range-spec {
+        min: option<f64>,
+        max: option<f64>,
+        step: option<f64>,
+        unit: option<string>,
+    }
+
+    record lookup-spec {
+        min-query-length: u32,
+        max-results: u32,
+        debounce-ms: u32,
+        allow-custom-values: bool,
+    }
+
+    /// Declares a search filter so clients can render it without plugin-specific
+    /// code.
+    record filter-spec {
+        id: string,
+        label: string,
+        filter-type: filter-type,
+        /// Kinds the filter applies to. Empty means all kinds.
+        kinds: list<string>,
+        required: bool,
+        hidden: bool,
+        /// Clients group filters with the same name together.
+        group: option<string>,
+        description: option<string>,
+        choices: list<choice>,
+        range: option<range-spec>,
+        lookup: option<lookup-spec>,
+    }
+
+    /// A filter value chosen by the user. Encoding per `filter-type` is
+    /// documented on the enum cases.
+    record filter-value {
+        id: string,
+        values: list<string>,
+    }
+
+    /// A search request.
+    record query {
+        text: string,
+        /// Restrict results to these kinds. Empty means all.
+        kinds: list<string>,
+        filters: list<filter-value>,
+        /// One of `plugin-info.sorts`, when the user picked one.
+        sort: option<string>,
+        /// Opaque; the `next-cursor` of the previous page.
+        cursor: option<string>,
+        /// A hint, not a guarantee. The plugin may return fewer or more.
+        limit: option<u32>,
+    }
+
+    /// A cursor-paged request for the children of a node.
+    record page-request {
+        cursor: option<string>,
+        limit: option<u32>,
+    }
+
+    record facet-count {
+        value: string,
+        label: string,
+        count: u64,
+    }
+
+    /// Result counts per filter value, for filters the plugin can facet.
+    record facet {
+        filter-id: string,
+        counts: list<facet-count>,
+    }
+
+    /// One page of nodes. Order is significant: for children it is reading or
+    /// playback order.
+    record node-page {
+        items: list<node>,
+        /// Absent on the last page.
+        next-cursor: option<string>,
+        /// Known total, when the upstream reports one.
+        total: option<u64>,
+        facets: list<facet>,
+    }
+}

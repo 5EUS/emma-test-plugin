@@ -1,0 +1,2 @@
+# "MangaDex" is a proper noun, not an identifier that needs backticks in docs. ".." keeps the defaults.
+doc-valid-idents = ["MangaDex", ".."]

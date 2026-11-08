@@ -1,0 +1,20 @@
+package emma:core@1.0.0;
+
+/// OPTIONAL extension. Not part of the base `plugin` world: a plugin opts in
+/// by targeting the `plugin-search-assist` world, and the host discovers the
+/// export on the instantiated component. Hosts must work when it is absent.
+///
+/// This is the template for every future optional feature: a separate
+/// interface, a separate world that `include`s `plugin`, versioned on its own.
+/// The base contract never grows.
+interface search-assist {
+    use types.{plugin-error, node};
+
+    /// Completion suggestions for a partially typed query.
+    suggest: func(text: string, limit: u32) -> result<list<string>, plugin-error>;
+
+    /// Fills in expensive fields (ratings, counts) for result nodes lazily,
+    /// after the fast search result is already on screen. Returns nodes with
+    /// the same ids; the host merges their props over the originals.
+    enrich: func(ids: list<string>) -> result<list<node>, plugin-error>;
+}

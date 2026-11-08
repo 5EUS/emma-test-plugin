@@ -1,0 +1,63 @@
+package emma:core@1.0.0;
+
+/// Everything a plugin may ask of the host. This is the plugin's entire view
+/// of the outside world: the host provides no filesystem, no sockets and no
+/// ambient clock, so each capability below is gated by the manifest and is
+/// observable, rate-limited and testable.
+interface host {
+    use types.{plugin-error, header};
+
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    /// Structured logging. The host adds the plugin id and correlation id.
+    log: func(level: log-level, message: string);
+
+    /// Wall-clock time in milliseconds since the Unix epoch, UTC. Provided by
+    /// the host so tests can control it.
+    now-ms: func() -> s64;
+
+    record http-request {
+        /// Upper-case HTTP method.
+        method: string,
+        url: string,
+        headers: list<header>,
+        body: option<list<u8>>,
+        timeout-ms: option<u32>,
+    }
+
+    record http-response {
+        status: u16,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    /// Performs an HTTP request on the plugin's behalf. The host enforces the
+    /// manifest's `permissions.network` allow-list, redirects included. Any HTTP
+    /// status, including 4xx and 5xx, is a successful call: the plugin decides
+    /// what a status means. Transport failures are `unavailable`; a domain
+    /// outside the allow-list is `invalid-argument` with a message naming it.
+    http-fetch: func(request: http-request) -> result<http-response, plugin-error>;
+
+    /// Reads from the plugin's private cache. Requires `permissions.cache`.
+    cache-get: func(key: string) -> option<list<u8>>;
+
+    /// Writes to the plugin's private cache. Entries are evicted after
+    /// `ttl-ms` or under pressure, whichever comes first.
+    cache-put: func(key: string, value: list<u8>, ttl-ms: u32);
+
+    /// Reads a user setting declared in `plugin-info.settings`, as text (see
+    /// `meta.setting-type` for the encoding). Absent when the user has set nothing and there
+    /// is no default. For a `multi-choice` setting this is the first chosen value. Secret
+    /// settings are returned in clear here and nowhere else.
+    setting: func(key: string) -> option<string>;
+
+    /// Reads every value of a setting: the chosen values of a `multi-choice`, or the single
+    /// value of any other type. Empty when nothing is set and there is no default.
+    setting-values: func(key: string) -> list<string>;
+}

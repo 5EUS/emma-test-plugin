@@ -63,3 +63,7 @@ logs/
 
 EMMA.code-workspace
 src/EMMA.WasmRuntime.Native/target
+
+# Rust MangaDex plugin
+rust/target/
+rust/dist/

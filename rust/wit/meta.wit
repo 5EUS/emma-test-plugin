@@ -1,0 +1,111 @@
+package emma:core@1.0.0;
+
+/// Self-description. Called once after instantiation; the result is cached by
+/// the host. Identity (id, name, version, author) is deliberately NOT here: it
+/// lives in the signed manifest, so a plugin cannot claim to be another one.
+interface meta {
+    use types.{plugin-error, choice, filter-spec};
+
+    /// Declares one kind of node a plugin produces.
+    record kind-info {
+        /// The kind string, as used in `node.kind`.
+        kind: string,
+        /// Human label for the kind ("Chapter").
+        label: string,
+        /// Kinds that may appear as children of this kind. Empty means a leaf.
+        /// This is the schema of the tree, so generic clients can navigate it.
+        children: list<string>,
+        /// Asset roles that `assets.resolve` supports for this kind, e.g.
+        /// `image`, `stream`, `subtitle`, `text`, `audio`.
+        roles: list<string>,
+        /// Optional name of a client profile this kind follows, such as
+        /// `emma.profile.paged@1`. A profile fixes the vocabulary of child
+        /// kinds, roles and well-known props, so clients can offer a typed
+        /// experience (a page reader, a video player) without core changes.
+        profile: option<string>,
+    }
+
+    /// How a setting is rendered, validated and read.
+    ///
+    /// Values always reach the plugin as text (`host.setting`, `host.setting-values`):
+    /// `boolean` is `true` or `false`; `number` is decimal text with `.` as the separator;
+    /// `duration` is whole milliseconds; `choice` is the chosen `choice.value`; `multi-choice`
+    /// is zero or more `choice.value`s.
+    enum setting-type {
+        /// Free text, limited by `max-length`.
+        text,
+        /// Free text the host stores encrypted, never logs, never exports and never shows back
+        /// to the user. Plugins read it in clear through `host.setting`, and nowhere else.
+        secret,
+        boolean,
+        number,
+        /// A length of time, in whole milliseconds.
+        duration,
+        /// Exactly one of `choices`.
+        choice,
+        /// Any subset of `choices`.
+        multi-choice,
+    }
+
+    /// Groups settings in a settings screen.
+    record setting-category {
+        id: string,
+        label: string,
+        description: option<string>,
+    }
+
+    /// Shows a setting only while another setting has a given value, so a screen can hide
+    /// options that do not apply. For a `multi-choice` setting the condition holds when the
+    /// value is among the chosen ones. Hidden settings are still readable by the plugin.
+    record setting-condition {
+        /// The `key` of another setting.
+        key: string,
+        equals: string,
+    }
+
+    /// Declares a user setting. Values reach the plugin via `host.setting`.
+    record setting-spec {
+        key: string,
+        label: string,
+        description: option<string>,
+        /// A longer explanation shown beside the field.
+        help: option<string>,
+        setting-type: setting-type,
+        /// The `id` of one of `plugin-info.categories`.
+        category: option<string>,
+        /// Whether the plugin cannot work without a value.
+        required: bool,
+        /// Defaults, as text values. At most one entry unless the type is `multi-choice`.
+        default-values: list<string>,
+        /// The options for `choice` and `multi-choice`; empty otherwise.
+        choices: list<choice>,
+        placeholder: option<string>,
+        /// The longest accepted `text` or `secret` value, in characters.
+        max-length: option<u32>,
+        visible-when: option<setting-condition>,
+    }
+
+    record plugin-info {
+        /// Every kind the plugin can produce. Must include every `node.kind`
+        /// the plugin returns; the host rejects nodes of undeclared kinds.
+        kinds: list<kind-info>,
+        /// Declared search filters. Replaces the old manifest search block.
+        filters: list<filter-spec>,
+        /// Available sort orders for search.
+        sorts: list<choice>,
+        /// Groups for the settings screen, in display order.
+        categories: list<setting-category>,
+        settings: list<setting-spec>,
+    }
+
+    describe: func() -> result<plugin-info, plugin-error>;
+
+    record health-report {
+        ok: bool,
+        /// Shown to the user when `ok` is false.
+        detail: option<string>,
+    }
+
+    /// Cheap liveness and upstream-reachability probe.
+    health: func() -> health-report;
+}

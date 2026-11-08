@@ -1,0 +1,18 @@
+package emma:core@1.0.0;
+
+/// The base contract every EMMA plugin component implements. Required exports
+/// only; adding anything here is a major version.
+world plugin {
+    import host;
+
+    export meta;
+    export catalog;
+    export assets;
+}
+
+/// A plugin that also offers search suggestions and lazy enrichment.
+world plugin-search-assist {
+    include plugin;
+
+    export search-assist;
+}
