@@ -6,7 +6,7 @@ straight to a WebAssembly component (`wasm32-wasip2`), so it needs no LLVM, wasi
 Docker.
 
 It exports `emma:core/meta`, `catalog` and `assets` (plus the optional `search-assist`
-interface for title suggestions and rating/follow enrichment) and imports `emma:core/host`
+interface for tag completion and rating/follow enrichment) and imports `emma:core/host`
 for HTTP, cache, logging and settings.
 
 ## Node model
@@ -16,6 +16,15 @@ for HTTP, cache, logging and settings.
 | `manga`         | `manga:<uuid>`        | search results and popular list               |
 | `manga.chapter` | `chapter:<uuid>`      | children of a manga; chapters with no hosted pages or an `externalUrl` are skipped |
 | `manga.page`    | `page:<chapter>:<n>`  | children of a chapter; `assets.resolve` returns the image URL |
+
+## Search filters
+
+`describe` declares `status`, `maturity`, `demographic` and `language` as multi-choice filters and `tag` as a lookup
+filter, each with a `role` (`emma.filter.*`) so a client can offer them as the user types. The tag filter has no
+choices: MangaDex has about eighty tags, so `suggest("tag", text, limit)` reads `/manga/tag` and returns the matching
+tags with the tag id as the value, which `includedTags[]` takes. The `language` filter overrides the language setting
+for `availableTranslatedLanguage[]` when it is set. The old title suggestions are gone with the contract change; a
+title is still searched by the search text.
 
 ## Wire contract
 
