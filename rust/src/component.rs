@@ -9,8 +9,8 @@ use crate::mapping::{self, AtHome, Chapter, Manga};
 use crate::util::encode;
 use bindings::emma::core::host;
 use bindings::emma::core::types::{
-    Choice, ErrorCode, FilterSpec, FilterType, Header, Node, NodePage, PageRequest, PluginError,
-    Prop, PropValue, Query,
+    Choice, ErrorCode, FilterSpec, FilterType, Header, LookupSpec, Node, NodePage, PageRequest,
+    PluginError, Prop, PropValue, Query,
 };
 use bindings::exports::emma::core::assets::{self, Asset, Chunk, Delivery, Remote, ResolveRequest};
 use bindings::exports::emma::core::catalog;
@@ -101,7 +101,7 @@ fn kind(kind: &str, label: &str, children: &[&str], roles: &[&str]) -> KindInfo 
     }
 }
 
-fn multi_filter(id: &str, label: &str, choices: Vec<Choice>) -> FilterSpec {
+fn multi_filter(id: &str, label: &str, role: &str, choices: Vec<Choice>) -> FilterSpec {
     FilterSpec {
         id: id.to_owned(),
         label: label.to_owned(),
@@ -114,6 +114,30 @@ fn multi_filter(id: &str, label: &str, choices: Vec<Choice>) -> FilterSpec {
         choices,
         range: None,
         lookup: None,
+        role: Some(role.to_owned()),
+    }
+}
+
+/// The tag filter. MangaDex has about eighty tags, so the host asks `suggest` instead of listing them.
+fn tag_filter() -> FilterSpec {
+    FilterSpec {
+        id: "tag".to_owned(),
+        label: "Tag".to_owned(),
+        filter_type: FilterType::Lookup,
+        kinds: vec![],
+        required: false,
+        hidden: false,
+        group: None,
+        description: Some("Only manga that have every chosen tag.".to_owned()),
+        choices: vec![],
+        range: None,
+        lookup: Some(LookupSpec {
+            min_query_length: 2,
+            max_results: 10,
+            debounce_ms: 200,
+            allow_custom_values: false,
+        }),
+        role: Some("emma.filter.tag".to_owned()),
     }
 }
 
@@ -416,10 +440,16 @@ fn manga_page(
         "publicationDemographic[]",
         &values("demographic"),
     );
+    repeated(&mut parameters, "includedTags[]", &values("tag"));
+    let languages = values("language");
     repeated(
         &mut parameters,
         "availableTranslatedLanguage[]",
-        std::slice::from_ref(&settings.language),
+        if languages.is_empty() {
+            std::slice::from_ref(&settings.language)
+        } else {
+            &languages
+        },
     );
     let title = query.text.trim();
     if !title.is_empty() {
@@ -666,6 +696,10 @@ impl meta::Guest for MangaDex {
             choice("ko", "Korean", false),
             choice("zh", "Chinese", false),
         ];
+        let language_choices: Vec<Choice> = languages
+            .iter()
+            .map(|language| choice(&language.value, &language.label, false))
+            .collect();
         let (categories, settings) = declared_settings(maturity.clone(), languages);
         Ok(PluginInfo {
             kinds: vec![
@@ -677,6 +711,7 @@ impl meta::Guest for MangaDex {
                 multi_filter(
                     "status",
                     "Status",
+                    "emma.filter.status",
                     vec![
                         choice("ongoing", "Ongoing", false),
                         choice("completed", "Completed", false),
@@ -684,10 +719,16 @@ impl meta::Guest for MangaDex {
                         choice("cancelled", "Cancelled", false),
                     ],
                 ),
-                multi_filter("maturity", "Maturity", maturity.clone()),
+                multi_filter(
+                    "maturity",
+                    "Maturity",
+                    "emma.filter.maturity",
+                    maturity.clone(),
+                ),
                 multi_filter(
                     "demographic",
                     "Demographic",
+                    "emma.filter.demographic",
                     vec![
                         choice("shounen", "Shounen", false),
                         choice("shoujo", "Shoujo", false),
@@ -695,6 +736,13 @@ impl meta::Guest for MangaDex {
                         choice("seinen", "Seinen", false),
                     ],
                 ),
+                multi_filter(
+                    "language",
+                    "Translated language",
+                    "emma.filter.language",
+                    language_choices,
+                ),
+                tag_filter(),
             ],
             sorts: vec![
                 choice("relevance", "Relevance", true),
@@ -873,27 +921,21 @@ impl assets::Guest for MangaDex {
 }
 
 impl search_assist::Guest for MangaDex {
-    fn suggest(text: String, limit: u32) -> Result<Vec<String>, PluginError> {
-        let text = text.trim();
-        if text.chars().count() < 2 {
-            return Ok(vec![]);
+    /// Completes the `tag` filter: the value sent back is the MangaDex tag id, the label its English name.
+    fn suggest(filter_id: String, text: String, limit: u32) -> Result<Vec<Choice>, PluginError> {
+        if filter_id != "tag" {
+            return Err(error(
+                ErrorCode::InvalidArgument,
+                format!("'{filter_id}' is not a lookup filter of this plugin."),
+            ));
         }
         let settings = Settings::load();
-        let size = limit.clamp(1, 10);
-        let mut parameters = vec![
-            format!("limit={size}"),
-            format!("title={}", encode(text)),
-            "order[relevance]=desc".to_owned(),
-        ];
-        repeated(&mut parameters, "contentRating[]", &settings.maturity);
-        let root = get_json(&settings, &format!("/manga?{}", parameters.join("&")))?;
-        let mut titles: Vec<String> = Vec::new();
-        for manga in mapping::manga_listing(&root, &settings.language).items {
-            if !titles.contains(&manga.title) {
-                titles.push(manga.title);
-            }
-        }
-        Ok(titles)
+        let root = get_json(&settings, "/manga/tag")?;
+        let size = usize::try_from(limit.clamp(1, 20)).unwrap_or(10);
+        Ok(mapping::match_tags(&mapping::tags(&root), &text, size)
+            .into_iter()
+            .map(|tag| choice(&tag.id, &tag.name, false))
+            .collect())
     }
 
     /// Adds MangaDex's rating and follower count. The returned titles are placeholders: the host merges only props.

@@ -8,10 +8,12 @@ package emma:core@1.0.0;
 /// interface, a separate world that `include`s `plugin`, versioned on its own.
 /// The base contract never grows.
 interface search-assist {
-    use types.{plugin-error, node};
+    use types.{plugin-error, node, choice};
 
-    /// Completion suggestions for a partially typed query.
-    suggest: func(text: string, limit: u32) -> result<list<string>, plugin-error>;
+    /// Completion suggestions for the value of one `lookup` filter, given the
+    /// partially typed text. Each suggestion carries the value to send back in
+    /// `filter-value.values` and a label to show. At most `limit` are wanted.
+    suggest: func(filter-id: string, text: string, limit: u32) -> result<list<choice>, plugin-error>;
 
     /// Fills in expensive fields (ratings, counts) for result nodes lazily,
     /// after the fast search result is already on screen. Returns nodes with

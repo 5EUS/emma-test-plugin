@@ -141,6 +141,13 @@ interface types {
         choices: list<choice>,
         range: option<range-spec>,
         lookup: option<lookup-spec>,
+        /// What the filter means, as an open string. Well-known values are
+        /// `emma.filter.language`, `emma.filter.tag`, `emma.filter.demographic`,
+        /// `emma.filter.status` and `emma.filter.maturity`; any other value is
+        /// legal. Clients use it to present the same idea the same way across
+        /// plugins (icon, ordering, typeahead) and fall back to `label` when
+        /// they do not know it. The host never switches on it.
+        role: option<string>,
     }
 
     /// A filter value chosen by the user. Encoding per `filter-type` is

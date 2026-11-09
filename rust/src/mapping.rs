@@ -74,6 +74,67 @@ pub struct Statistics {
     pub follows: Option<i64>,
 }
 
+/// A tag a manga can be filtered by.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tag {
+    /// The MangaDex tag id, which `includedTags[]` takes.
+    pub id: String,
+    /// The English name.
+    pub name: String,
+}
+
+/// Reads a `/manga/tag` response, skipping entries that lack an id or an English name.
+#[must_use]
+pub fn tags(root: &Value) -> Vec<Tag> {
+    root.get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.get("id").and_then(Value::as_str)?;
+            let name = entry
+                .get("attributes")
+                .and_then(|a| a.get("name"))
+                .and_then(|n| n.get("en"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty())?;
+            Some(Tag {
+                id: id.to_owned(),
+                name: name.to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// Picks the tags whose name matches what was typed, names that start with it first, then names that merely
+/// contain it, each group in alphabetical order. Matching ignores case.
+#[must_use]
+pub fn match_tags(tags: &[Tag], typed: &str, limit: usize) -> Vec<Tag> {
+    let needle = typed.trim().to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut starts: Vec<&Tag> = Vec::new();
+    let mut contains: Vec<&Tag> = Vec::new();
+    for tag in tags {
+        let name = tag.name.to_lowercase();
+        if name.starts_with(&needle) {
+            starts.push(tag);
+        } else if name.contains(&needle) {
+            contains.push(tag);
+        }
+    }
+    starts.sort_by_key(|tag| tag.name.to_lowercase());
+    contains.sort_by_key(|tag| tag.name.to_lowercase());
+    starts
+        .into_iter()
+        .chain(contains)
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
 /// A page of results with the paging fields MangaDex returns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Listing<T> {
@@ -270,6 +331,40 @@ mod tests {
         );
         assert_eq!(pick_localized(&json!({ "en": "  " }), "en"), None);
         assert_eq!(pick_localized(&json!("not a map"), "en"), None);
+    }
+
+    fn sample_tags() -> Value {
+        json!({ "data": [
+            { "id": "t-1", "attributes": { "name": { "en": "Action" } } },
+            { "id": "t-2", "attributes": { "name": { "en": "Slice of Life" } } },
+            { "id": "t-3", "attributes": { "name": { "en": "Adventure" } } },
+            { "id": "t-4", "attributes": { "name": { "en": "Reaction Images" } } },
+            { "id": "no-name", "attributes": { "name": {} } },
+            { "attributes": { "name": { "en": "No id" } } } ] })
+    }
+
+    #[test]
+    fn tags_are_read_and_entries_without_an_id_or_name_are_skipped() {
+        let tags = tags(&sample_tags());
+        assert_eq!(
+            tags.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            ["t-1", "t-2", "t-3", "t-4"]
+        );
+        assert_eq!(tags[1].name, "Slice of Life");
+        assert!(super::tags(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn typed_text_matches_tag_names_by_prefix_first_then_by_containment_ignoring_case() {
+        let tags = tags(&sample_tags());
+        let found = match_tags(&tags, " ACT ", 10);
+        assert_eq!(
+            found.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["Action", "Reaction Images"]
+        );
+        assert_eq!(match_tags(&tags, "a", 1).len(), 1);
+        assert!(match_tags(&tags, "   ", 10).is_empty());
+        assert!(match_tags(&tags, "zzz", 10).is_empty());
     }
 
     fn sample_manga() -> Value {
