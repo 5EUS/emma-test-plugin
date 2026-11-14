@@ -98,6 +98,18 @@ fn kind(kind: &str, label: &str, children: &[&str], roles: &[&str]) -> KindInfo 
         children: children.iter().map(|c| (*c).to_owned()).collect(),
         roles: roles.iter().map(|r| (*r).to_owned()).collect(),
         profile: Some("emma.profile.paged@1".to_owned()),
+        max_age_ms: None,
+    }
+}
+
+/// How long the host may serve a stored series and its chapter list before asking again: one hour.
+const SERIES_MAX_AGE_MS: u32 = 3_600_000;
+
+/// A kind whose stored details and listings the host may serve for only `max_age_ms`.
+fn aging(max_age_ms: u32, kind: KindInfo) -> KindInfo {
+    KindInfo {
+        max_age_ms: Some(max_age_ms),
+        ..kind
     }
 }
 
@@ -703,7 +715,11 @@ impl meta::Guest for MangaDex {
         let (categories, settings) = declared_settings(maturity.clone(), languages);
         Ok(PluginInfo {
             kinds: vec![
-                kind("manga", "Manga", &["manga.chapter"], &[]),
+                // New chapters appear under a series, so its listing may only be served for an hour.
+                aging(
+                    SERIES_MAX_AGE_MS,
+                    kind("manga", "Manga", &["manga.chapter"], &[]),
+                ),
                 kind("manga.chapter", "Chapter", &["manga.page"], &[]),
                 kind("manga.page", "Page", &[], &["image"]),
             ],

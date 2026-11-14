@@ -23,6 +23,12 @@ interface meta {
         /// kinds, roles and well-known props, so clients can offer a typed
         /// experience (a page reader, a video player) without core changes.
         profile: option<string>,
+        /// How long, in milliseconds, the host may keep serving what it stored about a node of this kind
+        /// (its details from `get`, and its listed children) before asking the plugin again. Set it for
+        /// content that changes under the user, such as view counts, feeds and comments. A stale copy is
+        /// still served if the plugin cannot be reached. Absent means the host keeps it until a refresh;
+        /// 0 means always ask.
+        max-age-ms: option<u32>,
     }
 
     /// How a setting is rendered, validated and read.
